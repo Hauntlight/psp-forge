@@ -248,7 +248,13 @@ def cmd_run(args):
         emulator = args.emulator
     else:
         configured_emu = cfg["deploy"].get("emulator_bin", "PPSSPPQt")
-        for emu_name in [configured_emu, "PPSSPPQt", "PPSSPPSDL", "ppsspp"]:
+        workspace_ppsspp = Path(__file__).resolve().parents[3] / "emulators" / "ppsspp" / "ppsspp"
+        local_ppsspp = Path("/home/hauntlight/psp_game_dev/emulators/ppsspp/ppsspp")
+        candidates = [configured_emu, str(workspace_ppsspp), str(local_ppsspp), "PPSSPPQt", "PPSSPPSDL", "ppsspp"]
+        for emu_name in candidates:
+            if os.path.isabs(emu_name) and os.path.exists(emu_name):
+                emulator = emu_name
+                break
             found = shutil.which(emu_name)
             if found:
                 emulator = found
