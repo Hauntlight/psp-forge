@@ -1,0 +1,35 @@
+# Build artifacts
+build/
+bin/build/
+*.o
+*.a
+*.elf
+*.prx
+*.pbp
+EBOOT.PBP
+PARAM.SFO
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+dist/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
