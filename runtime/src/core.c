@@ -174,27 +174,36 @@ FILE* forge_fopen(const char* path, const char* mode) {
     FILE* f = fopen(path, mode);
     if (f) return f;
 
-    /* 2. If path starts with "build/", try stripping "build/" */
+    char buf[256];
+
+    /* 2. PSP Device prefixes: disc0:/ (UMD/standalone EBOOT directory mount in PPSSPP) and ms0:/ */
+    if (strncmp(path, "disc0:/", 7) != 0 && strncmp(path, "ms0:/", 5) != 0) {
+        const char* clean_path = (strncmp(path, "build/", 6) == 0) ? (path + 6) : path;
+
+        snprintf(buf, sizeof(buf), "disc0:/%s", clean_path);
+        f = fopen(buf, mode);
+        if (f) return f;
+
+        const char* slash = strrchr(clean_path, '/');
+        const char* fname = slash ? (slash + 1) : clean_path;
+        snprintf(buf, sizeof(buf), "disc0:/assets/%s", fname);
+        f = fopen(buf, mode);
+        if (f) return f;
+
+        snprintf(buf, sizeof(buf), "ms0:/%s", clean_path);
+        f = fopen(buf, mode);
+        if (f) return f;
+    }
+
+    /* 3. If path starts with "build/", try stripping "build/" */
     if (strncmp(path, "build/", 6) == 0) {
         f = fopen(path + 6, mode);
         if (f) return f;
     }
 
-    /* 3. If path starts with "assets/", try prepending "build/" */
-    char buf[256];
+    /* 4. If path starts with "assets/", try prepending "build/" */
     if (strncmp(path, "assets/", 7) == 0) {
         snprintf(buf, sizeof(buf), "build/%s", path);
-        f = fopen(buf, mode);
-        if (f) return f;
-    }
-
-    /* 4. Try looking directly inside assets/ if path has a directory prefix */
-    const char* slash = strrchr(path, '/');
-    if (slash) {
-        snprintf(buf, sizeof(buf), "assets/%s", slash + 1);
-        f = fopen(buf, mode);
-        if (f) return f;
-        snprintf(buf, sizeof(buf), "build/assets/%s", slash + 1);
         f = fopen(buf, mode);
         if (f) return f;
     }
