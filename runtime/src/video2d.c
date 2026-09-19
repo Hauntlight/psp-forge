@@ -23,7 +23,7 @@ typedef struct {
 } ForgeVertex2D;
 
 static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
-    FILE* f = fopen(path, "rb");
+    FILE* f = forge_fopen(path, "rb");
     if (!f) return NULL;
 
     PtexHeader hdr;

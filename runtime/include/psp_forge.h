@@ -9,6 +9,7 @@
 #include <pspctrl.h>
 #include <pspgu.h>
 #include <pspgum.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +31,7 @@ void     forge_end_frame(void);
 void     forge_clear(uint32_t color_rgba8888);
 float    forge_get_delta_time(void);
 float    forge_get_fps(void);
+FILE*    forge_fopen(const char* path, const char* mode);
 
 /* ========================================================================= */
 /* VRAM Static Allocator (2 MB total eDRAM)                                 */

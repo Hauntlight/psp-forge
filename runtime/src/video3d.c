@@ -20,7 +20,7 @@ typedef struct __attribute__((packed)) {
 static ForgeLight s_virtual_lights[FORGE_MAX_VIRTUAL_LIGHTS];
 
 ForgeMesh* forge_mesh_load(const char* path) {
-    FILE* f = fopen(path, "rb");
+    FILE* f = forge_fopen(path, "rb");
     if (!f) return NULL;
 
     Pm3dHeader hdr;

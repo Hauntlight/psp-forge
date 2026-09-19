@@ -3,6 +3,7 @@
 #include <pspdisplay.h>
 #include <psprtc.h>
 #include <string.h>
+#include <stdio.h>
 
 /* Internal VRAM accessors from vram.c */
 void* forge_vram_get_draw_buffer(void);
@@ -164,4 +165,39 @@ float forge_get_delta_time(void) {
 
 float forge_get_fps(void) {
     return s_fps;
+}
+
+FILE* forge_fopen(const char* path, const char* mode) {
+    if (!path || !mode) return NULL;
+
+    /* 1. Try exact requested path */
+    FILE* f = fopen(path, mode);
+    if (f) return f;
+
+    /* 2. If path starts with "build/", try stripping "build/" */
+    if (strncmp(path, "build/", 6) == 0) {
+        f = fopen(path + 6, mode);
+        if (f) return f;
+    }
+
+    /* 3. If path starts with "assets/", try prepending "build/" */
+    char buf[256];
+    if (strncmp(path, "assets/", 7) == 0) {
+        snprintf(buf, sizeof(buf), "build/%s", path);
+        f = fopen(buf, mode);
+        if (f) return f;
+    }
+
+    /* 4. Try looking directly inside assets/ if path has a directory prefix */
+    const char* slash = strrchr(path, '/');
+    if (slash) {
+        snprintf(buf, sizeof(buf), "assets/%s", slash + 1);
+        f = fopen(buf, mode);
+        if (f) return f;
+        snprintf(buf, sizeof(buf), "build/assets/%s", slash + 1);
+        f = fopen(buf, mode);
+        if (f) return f;
+    }
+
+    return NULL;
 }

@@ -108,7 +108,7 @@ static void ensure_audio_thread_started(void) {
 }
 
 ForgeSound* forge_sound_load(const char* path) {
-    FILE* f = fopen(path, "rb");
+    FILE* f = forge_fopen(path, "rb");
     if (!f) return NULL;
 
     PsndHeader hdr;
