@@ -5,6 +5,11 @@ This tutorial explains how to structure a complete multi-screen game (Main Menu,
 The working demo associated with this guide is located in:
 `demos/demo_scenes/`
 
+<div align="center">
+  <img src="media/demo_scenes.png" width="600" alt="Scene Manager Demo Running on PPSSPP" />
+  <p><em>Title Menu to Gameplay scene transition with deterministic memory cleanup in 24 MB RAM.</em></p>
+</div>
+
 ---
 
 ## 1. Why a Scene Manager on PSP?

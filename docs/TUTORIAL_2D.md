@@ -2,6 +2,11 @@
 
 This tutorial walks through creating a full interactive 2D demo step-by-step, explaining asset management (sprites, audio, and menu icons), building the `EBOOT.PBP` executable, and writing the C99 game loop.
 
+<div align="center">
+  <img src="media/template_2d.png" width="600" alt="2D Hero Starter Running on PPSSPP" />
+  <p><em>2D Hero Starter running at a rock-solid 60 FPS on the PSP hardware rasterizer.</em></p>
+</div>
+
 ---
 
 ## 1. Project Structure

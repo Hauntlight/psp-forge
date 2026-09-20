@@ -200,7 +200,17 @@ See [docs/INSTALLATION.md](docs/INSTALLATION.md) for complete from-scratch toolc
 
 ## 🕹️ Showcase Demos
 
-Five complete, standalone showcase demos are provided in `demos/`. All demos feature 100% copyright-free procedural assets:
+Five complete, standalone showcase demos are provided in `demos/`. All demos feature 100% copyright-free procedural assets and run at a rock-solid **60 FPS** on real PSP hardware and PPSSPP:
+
+<div align="center">
+
+| **2D Animation** (`demo_anim_2d`) | **3D Animation** (`demo_anim_3d`) | **3D Humanoid V2** (`demo_anim_3d_v2`) |
+|:---:|:---:|:---:|
+| <img src="docs/media/demo_anim_2d.png" width="280" alt="2D Animation Demo" /> | <img src="docs/media/demo_anim_3d.png" width="280" alt="3D Animation Demo" /> | <img src="docs/media/demo_anim_3d_v2.png" width="280" alt="3D Humanoid Demo" /> |
+| **Scene Manager** (`demo_scenes`) | **Collisions** (`demo_collisions`) | **3D Runner Template** (`3d_runner`) |
+| <img src="docs/media/demo_scenes.png" width="280" alt="Scene Manager Demo" /> | <img src="docs/media/demo_collisions.png" width="280" alt="Collisions Demo" /> | <img src="docs/media/template_3d.png" width="280" alt="3D Runner Template" /> |
+
+</div>
 
 | Demo | Directory | Key Techniques Demonstrated | Assets Included |
 |---|---|---|---|

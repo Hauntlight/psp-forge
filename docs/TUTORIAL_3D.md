@@ -2,6 +2,11 @@
 
 This tutorial explains how to build an interactive 3D scene from scratch on the Sony PSP, handling Wavefront OBJ models, texture mapping, dynamic perspective cameras, vertical jumping physics, and endless track scrolling at 60 FPS.
 
+<div align="center">
+  <img src="media/template_3d.png" width="600" alt="3D Track Runner Running on PPSSPP" />
+  <p><em>3D Track Runner featuring textured highway polygons, perspective camera view, and jump physics.</em></p>
+</div>
+
 ---
 
 ## 1. Project Structure

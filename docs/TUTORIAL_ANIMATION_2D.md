@@ -5,6 +5,11 @@ This tutorial explains how to achieve smooth 60 FPS 2D animations on the PlaySta
 The complete working demo associated with this guide is located in:
 `demos/demo_anim_2d/`
 
+<div align="center">
+  <img src="media/demo_anim_2d.png" width="600" alt="2D Sprite Flipbook Animation Demo Running on PPSSPP" />
+  <p><em>4-frame animated cyber knight running at locked 60 FPS via ForgeSpriteAnim.</em></p>
+</div>
+
 ---
 
 ## 1. How 2D Animations Work on the PSP

@@ -5,6 +5,11 @@ This tutorial explains how to manage hitboxes, triggers, and solid physical obst
 The complete working demo associated with this guide is located in:
 `demos/demo_collisions/`
 
+<div align="center">
+  <img src="media/demo_collisions.png" width="600" alt="Collisions Demo Running on PPSSPP" />
+  <p><em>Solid AABB obstacle blocking and Circle coin pickup triggers with PCM audio chimes.</em></p>
+</div>
+
 ---
 
 ## 1. Supported Collision Geometries

@@ -22,6 +22,11 @@ Commercial PSP titles (and classic PS1/N64 era games) solve this elegantly with 
 
 ## 2. Part 1: Procedural Floating Object (`demo_anim_3d`)
 
+<div align="center">
+  <img src="media/demo_anim_3d.png" width="560" alt="Procedural 3D Floating Gem Demo Running on PPSSPP" />
+  <p><em>Procedural 3D floating crystal with sinusoidal bobbing, harmonic tilt, and continuous rotation.</em></p>
+</div>
+
 ### A. Mathematical Foundations
 - **Vertical oscillation (bobbing)**:
   $$Y(t) = Y_0 + \sin(t \cdot \omega_{\text{bob}}) \cdot A_{\text{bob}}$$
@@ -64,6 +69,11 @@ forge_end_frame();
 ## 3. Part 2: Articulated Humanoid Rig (`demo_anim_3d_v2`)
 
 In `demo_anim_3d_v2`, we construct an interactive humanoid cyber-knight walking inside a 3D circular arena.
+
+<div align="center">
+  <img src="media/demo_anim_3d_v2.png" width="560" alt="Articulated Humanoid Knight Demo V2 Running on PPSSPP" />
+  <p><em>Articulated humanoid rig with pspgum matrix cascade, sword slash, and interactive locomotion at 60 FPS.</em></p>
+</div>
 
 ### A. Modular Mesh Design & Pivot Points
 To allow limbs to rotate naturally around joints (shoulders, elbows, hips, knees), modular meshes must be modeled with their **pivot point at $(0, 0, 0)$**:
