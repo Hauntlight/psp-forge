@@ -129,14 +129,11 @@ int main(int argc, char* argv[]) {
             /* Camera-relative movement vectors:
              * On PSP: input_y is -1.0 for UP (forward), +1.0 for DOWN (backward).
              *         input_x is +1.0 for RIGHT, -1.0 for LEFT.
-             * Camera forward vector: (-sin_cam,  cos_cam)
-             * Camera right vector:   ( cos_cam,  sin_cam)
-             *
-             * stick_forward = -input_y; stick_right = input_x;
-             * move = stick_right * cam_right + stick_forward * cam_forward
+             * In this camera view, world +X projects to screen left, so screen-right is -X.
+             * stick_forward = -input_y; stick_right = -input_x;
              */
-            float move_x = (input_x * cos_cam + input_y * sin_cam);
-            float move_z = (input_x * sin_cam - input_y * cos_cam);
+            float move_x = (-input_x * cos_cam + input_y * sin_cam);
+            float move_z = (-input_x * sin_cam - input_y * cos_cam);
 
             float move_speed = 3.8f;
             char_x += move_x * move_speed * dt;
