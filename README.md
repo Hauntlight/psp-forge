@@ -2,11 +2,11 @@
 
 # PSP-FORGE ⚔️
 
+### A new, simpler way to create games for the PSP
+
 [![Platform](https://img.shields.io/badge/Platform-Sony%20PSP-003791?logo=playstation&logoColor=white)](https://pspdev.github.io/) [![Arch](https://img.shields.io/badge/Arch-MIPS%20Allegrex-FF6600?logo=cpu&logoColor=white)](https://pspdev.github.io/vfpu-docs/) [![C Standard](https://img.shields.io/badge/C%20Standard-C99-00599C?logo=c&logoColor=white)](https://en.wikipedia.org/wiki/C99) [![Toolchain](https://img.shields.io/badge/Toolchain-PSPDEV-008080)](https://github.com/pspdev) [![Vibe Coded](https://img.shields.io/badge/Crafted-100%25%20Vibe--Coded-ff69b4?logo=openai&logoColor=white)](#-100-vibe-coded-origins) [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-**A Unified Developer Suite & High-Performance C99 Micro-Engine for Sony PlayStation Portable® (PSP)**
-
-*Streamlined CLI Orchestration • Automated Hardware Asset Cooker • Bare-Metal 2D/3D Runtime • 60 FPS Guaranteed*
+*An All-in-One "Swiss Army Knife" & Micro-Engine for Homebrew Developers • Streamlined CLI • Asset Cooker • 60 FPS Guaranteed*
 
 [Get Started](docs/INSTALLATION.md) • [Documentation](docs/) • [Tutorials](#-tutorials--guides) • [Demos](#-showcase-demos) • [Architecture](#-architecture--key-features) • [Thanks](#-thanks--acknowledgments)
 
@@ -38,10 +38,15 @@
 
 ## Overview
 
-**PSP-Forge** bridges the gap between modern game development developer experiences (DX) and classic bare-metal embedded consoles. Built specifically for the **Sony PlayStation Portable (PSP-1000/2000/3000/Go/Street)**, PSP-Forge unifies:
-1. An intuitive **CLI tool** (`init`, `cook`, `build`, `run`, `clean`) that abstracts away arcane toolchain incantations.
+> [!IMPORTANT]
+> **Built on top of PSPSDK, not a replacement!**  
+> PSP-Forge does **not** aim to replace the official [PSPSDK / PSPDEV](https://github.com/pspdev) toolchain—we build directly on top of it!  
+> Rather, PSP-Forge serves as an all-in-one **"Swiss Army knife" (*coltellino svizzero*)** for game developers: creators working on other engines (such as Raylib, Godot, LÖVE2D, SDL) or beginners who want pre-built templates, automated asset processing, and a high-level micro-engine without having to reinvent low-level hardware wheels (display lists, texture swizzling, memory layouts, and audio threads).
+
+PSP-Forge bridges the gap between modern game development developer experiences (DX) and classic bare-metal embedded consoles. Built specifically for the **Sony PlayStation Portable (PSP-1000/2000/3000/Go/Street)**, PSP-Forge unifies:
+1. An intuitive **CLI tool** (`init`, `cook`, `build`, `run`, `clean`) that abstracts away arcane toolchain incantations, sets up IDE include paths, and packages EBOOTs.
 2. A deterministic **Asset Pipeline ("The Cooker")** that automatically optimizes textures (GPU swizzling, power-of-two padding, CLUT palettization), 3D Wavefront OBJ models, and 44.1 kHz PCM audio, complete with **hardware budget warning checks**.
-3. A clean, zero-allocation **C99 Micro-Engine (`libpspforge.a`)** leveraging the PSP's native Graphics Engine (GE), GUM matrix stack, and multithreaded Media Engine PCM audio output.
+3. A clean, zero-allocation **C99 Micro-Engine (`libpspforge.a`)** providing pre-baked 2D sprite rendering, 3D perspective pipelines, collision detection, sprite flipbook animations, multi-scene management, and background audio streaming out of the box.
 
 ---
 
