@@ -1,81 +1,81 @@
-# Guida Ufficiale Asset Pipeline (`The Cooker`) ⚔️
+# Official Asset Pipeline Guide (`The Cooker`) ⚔️
 
-La GPU e la CPU della Sony PSP (MIPS R4000 Allegrex) hanno caratteristiche architetturali molto particolari:
-- **eDRAM interna di soli 2 MB** ad altissima banda.
-- **Cache miss gravosi**: il campionamento lineare delle texture in memoria convenzionale rallenta il fillrate.
-- **Allineamento a 16 byte obbligatorio** per i vertici inviati al GE (Graphics Engine) tramite DMA.
-- **Supporto audio nativo in blocchi da 64 campioni** a 44100 Hz PCM 16-bit signed little-endian.
+The GPU and CPU of the Sony PSP (MIPS R4000 Allegrex) have distinct architectural constraints:
+- **On-chip eDRAM of only 2 MB** with ultra-high bandwidth.
+- **Costly cache misses**: linear texture sampling from standard memory degrades fillrate.
+- **Mandatory 16-byte alignment** for vertices dispatched to the Graphics Engine (GE) via DMA.
+- **Native hardware audio requirements** of 44100 Hz signed 16-bit little-endian PCM in chunks of 64 samples.
 
-La suite **PSP-Forge** include il compilatore di asset (`psp-forge cook`) per convertire automaticamente i file standard di modellazione e grafica (PNG, JPG, OBJ, WAV, MP3) in formati binari pronti per l'hardware:
+The **PSP-Forge** suite includes the asset compiler (`psp-forge cook`) to automatically convert standard art, modeling, and audio files (PNG, JPG, OBJ, WAV, MP3) into binary formats ready for direct hardware consumption:
 
-| Formato Sorgente Standard | Formato Cooked PSP | Modulo Cooker | Ottimizzazioni Hardware Eseguite |
+| Source Format | Cooked PSP Format | Cooker Module | Hardware Optimizations Performed |
 |---|---|---|---|
-| `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tga` | **`.tex`** (PSP Texture) | `cli/cookers/texture.py` | Swizzling $16 \times 8$ byte, POT Padding ($2^n \le 512$), allineamento PSM hardware |
-| Wavefront `.obj` | **`.p3d`** (PSP 3D Mesh) | `cli/cookers/mesh.py` | Normali, UV capovolte, triangolazione, AABB Bounding Box, allineamento 16-byte |
-| `.wav`, `.mp3`, `.ogg`, `.flac` | **`.snd`** (PSP Sound) | `cli/cookers/audio.py` | Resampling lineare 44.1kHz, PCM S16-LE, allineamento a blocchi di 64 campioni |
+| `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tga` | **`.tex`** (PSP Texture) | `cli/cookers/texture.py` | $16 \times 8$ byte block swizzling, POT Padding ($2^n \le 512$), hardware PSM alignment |
+| Wavefront `.obj` | **`.p3d`** (PSP 3D Mesh) | `cli/cookers/mesh.py` | Normals, flipped V UVs, triangulation, AABB Bounding Box, 16-byte DMA alignment |
+| `.wav`, `.mp3`, `.ogg`, `.flac` | **`.snd`** (PSP Sound) | `cli/cookers/audio.py` | Linear resampling to 44.1kHz, PCM S16-LE, alignment to 64-sample multiples |
 
 ---
 
-## 1. Texture: Da PNG / JPG a `.tex`
+## 1. Textures: From PNG / JPG to `.tex`
 
-### Cos'è il Texture Swizzling?
-In un'immagine normale (lineare), i pixel sono salvati riga per riga da sinistra a destra. Quando la GPU della PSP campiona texture su superfici inclinate o in 3D, deve saltare continuamente da una riga all'altra della RAM, generando continui cache miss.  
-Lo **swizzling** riorganizza la sequenza di byte in blocchetti rettangolari da **$16 \times 8$ byte**: i pixel vicini nello spazio 2D si trovano così contigui anche nella memoria fisica.
+### What is Texture Swizzling?
+In standard linear images, pixels are stored row by row from left to right. When the PSP GPU samples textures on angled or 3D surfaces, it must constantly jump between distant memory rows, causing severe cache misses.  
+**Swizzling** reorganizes the byte sequence into rectangular blocks of **$16 \times 8$ bytes**: pixels that are close together in 2D space become contiguous in physical memory, dramatically improving texture cache hit rate.
 
-### Come funziona la conversione:
-1. **Dimensioni Potenza di Due (POT)**: La PSP richiede texture con dimensioni potenze di due ($16, 32, 64, 128, 256, 512$). Il cooker calcola la potenza di due minima superiore e applica il padding trasparente automatico.
-2. **Formati Pixel Supportati (Pixel Storage Mode - PSM)**:
-   - `8888` / `rgba8888` (`GU_PSM_8888 = 3`): 32-bit RGBA (massima qualità).
-   - `5551` / `rgba5551` (`GU_PSM_5551 = 1`): 16-bit RGBA (1 bit per la trasparenza on/off).
-   - `4444` / `rgba4444` (`GU_PSM_4444 = 2`): 16-bit RGBA (trasparenza a 16 livelli).
-   - `5650` / `rgb5650`  (`GU_PSM_5650 = 0`): 16-bit RGB senza trasparenza (ideale per sfondi e cielo).
+### How Conversion Works:
+1. **Power-of-Two (POT) Dimensions**: The PSP requires texture dimensions to be powers of two ($16, 32, 64, 128, 256, 512$). The cooker calculates the next power of two and applies transparent zero-padding automatically.
+2. **Supported Pixel Storage Modes (PSM)**:
+   - `8888` / `rgba8888` (`GU_PSM_8888 = 3`): 32-bit RGBA (maximum fidelity).
+   - `5551` / `rgba5551` (`GU_PSM_5551 = 1`): 16-bit RGBA (1-bit alpha on/off).
+   - `4444` / `rgba4444` (`GU_PSM_4444 = 2`): 16-bit RGBA (16 levels of alpha).
+   - `5650` / `rgb5650`  (`GU_PSM_5650 = 0`): 16-bit RGB with no alpha (ideal for skyboxes and backgrounds).
 
-### Utilizzo rapido da riga di comando:
+### Command-Line Usage:
 ```bash
-# Tramite l'orchestratore del progetto:
+# Cook all project assets:
 psp-forge cook
 
-# Oppure cuocendo una singola immagine:
+# Or cook a single image:
 python3 -c "
 from cli.cookers.texture import cook_texture
 cook_texture('assets/hero.png', 'build/assets/hero.tex', format_type='8888', swizzle=True)
 "
 ```
 
-### Caricamento e rendering nel codice C:
+### Loading and Rendering in C:
 ```c
 ForgeTexture* tex = forge_texture_load("assets/hero.tex");
 
-// Disegno 2D immediato (pixel coord):
+// Immediate 2D quad drawing (pixel coordinates):
 forge_draw_sprite(tex, screen_x, screen_y, width, height, tex_u, tex_v, tex_w, tex_h);
 
-// Rilascio alla chiusura:
+// Cleanup on shutdown:
 forge_texture_free(tex);
 ```
 
 ---
 
-## 2. Modelli 3D: Da Wavefront `.obj` a `.p3d`
+## 2. 3D Models: From Wavefront `.obj` to `.p3d`
 
-### Struttura Vertici Richiesta dalla PSP:
-Il Graphics Engine della PSP si aspetta che i componenti di ogni vertice siano disposti nell'ordine rigoroso:
-Texture (U, V) -> Colore -> Normali (NX, NY, NZ) -> Posizione (X, Y, Z)
+### Vertex Structure Required by the PSP:
+The PSP Graphics Engine expects vertex components in strict sequential order:
+Texture (U, V) -> Color -> Normals (NX, NY, NZ) -> Position (X, Y, Z)
 
-Il cooker `mesh.py`:
-1. Legge le coordinate di vertici `v`, texture `vt` e normali `vn`.
-2. Se il modello non ha normali, le calcola automaticamente tramite prodotto vettoriale.
-3. Converte l'asse V delle UV (invertendo 1.0 - V) per uniformarlo allo standard del GE.
-4. Triangola le facce (anche quadrangolari o N-goni) con ventaglio di triangoli (*triangle fan*).
-5. Calcola la **Bounding Box AABB** (`aabb_min`, `aabb_max`, centro e raggio di culling).
-6. Scrive i vertici con stride di 32 byte, perfettamente allineati a 16 byte per il DMA hardware.
+The `mesh.py` cooker:
+1. Reads vertex positions `v`, texture coordinates `vt`, and surface normals `vn`.
+2. Computes smooth face normals via cross products if the model lacks normals.
+3. Flips the vertical UV axis ($1.0 - V$) to align with the GE standard.
+4. Triangulates faces (quads and N-gons) using triangle fans.
+5. Computes the **AABB Bounding Box** (`aabb_min`, `aabb_max`, bounding center, and culling radius).
+6. Writes packed vertices with a 32-byte stride, strictly aligned to 16 bytes for hardware DMA.
 
-### Esportazione corretta da Blender / Maya:
-Quando esporti un `.obj` da Blender:
-- Seleziona **Triangulate Faces** (o lascia che lo faccia il cooker).
-- Spunta **Write Normals** e **Include UVs**.
-- Orientamento: Forward `-Z`, Up `+Y`.
+### Exporting from Blender / Maya:
+When exporting `.obj` from Blender:
+- Select **Triangulate Faces** (or let the cooker triangulate automatically).
+- Check **Write Normals** and **Include UVs**.
+- Coordinate axes: Forward `-Z`, Up `+Y`.
 
-### Utilizzo:
+### Command-Line Usage:
 ```bash
 python3 -c "
 from cli.cookers.mesh import cook_mesh
@@ -83,59 +83,59 @@ cook_mesh('assets/track.obj', 'build/assets/track.p3d')
 "
 ```
 
-### Caricamento e rendering nel codice C:
+### Loading and Rendering in C:
 ```c
 ForgeMesh* mesh = forge_mesh_load("assets/track.p3d");
 ForgeTexture* tex = forge_texture_load("assets/track.tex");
 
-// Disegno nello spazio 3D (posizione x,y,z, rotazioni in radianti, scala):
+// Render in 3D space (position x, y, z; rotation in radians; scale):
 forge_draw_mesh(mesh, tex, 0.0f, 0.0f, pos_z, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
 
-// Rilascio:
+// Cleanup:
 forge_mesh_free(mesh);
 ```
 
 ---
 
-## 3. Audio: Da WAV / MP3 / OGG a `.snd`
+## 3. Audio: From WAV / MP3 / OGG to `.snd`
 
-### Vincoli del Chip Audio PSP:
-Il chip audio della PSP richiede campioni a **44.1 kHz signed 16-bit** con buffer multipli di **64 campioni**.
+### Hardware Audio Constraints:
+The PSP audio hardware operates on **44.1 kHz signed 16-bit PCM** with buffers that must be multiples of **64 samples**.
 
-Il cooker `audio.py`:
-- Supporta file non compressi `.wav`.
-- Se è installato `ffmpeg`, converte automaticamente anche `.mp3`, `.ogg`, `.flac`, `.m4a`.
-- Applica ricampionamento bilineare se la frequenza sorgente differisce da 44100 Hz.
-- Normalizza e allinea la lunghezza finale al multiplo di 64 campioni più vicino con padding a zero (silenzio).
+The `audio.py` cooker:
+- Supports uncompressed `.wav` files natively.
+- Supports `.mp3`, `.ogg`, `.flac`, `.m4a` when `ffmpeg` is available on the system.
+- Applies linear interpolation resampling if the source rate differs from 44100 Hz.
+- Normalizes and aligns final sample length to the nearest multiple of 64 samples with zero padding (silence).
 
-### Caricamento e riproduzione nel codice C:
+### Loading and Playing in C:
 ```c
 ForgeSound* sound = forge_sound_load("assets/jump.snd");
 
-// Riproduzione immediata nel thread audio dedicato:
-forge_sound_play(sound, 0); // secondo parametro: 0 = una tantum, 1 = loop continuo
+// Immediate dispatch to dedicated audio thread:
+forge_sound_play(sound, 0); // second parameter: 0 = one-shot, 1 = loop
 
-// Rilascio:
+// Cleanup:
 forge_sound_free(sound);
 ```
 
 ---
 
-## 4. Packaging Eseguibile e Compatibilità Hardware (`EBOOT.PBP`)
+## 4. Executable Packaging & Hardware Compatibility (`EBOOT.PBP`)
 
-Per garantire che il file compilato funzioni **sia sull'emulatore PPSSPP sia sulla PSP reale**, è fondamentale che nel file `CMakeLists.txt` sia presente la direttiva `BUILD_PRX` all'interno della funzione `create_pbp_file()`:
+To ensure the compiled game runs seamlessly **both in the PPSSPP emulator and on real PSP consoles**, make sure `CMakeLists.txt` includes the `BUILD_PRX` directive in `create_pbp_file()`:
 
 ```cmake
 create_pbp_file(
-    TARGET mio_gioco
-    TITLE "Mio Gioco PSP"
+    TARGET my_game
+    TITLE "My PSP Game"
     BUILD_PRX
     ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon0.png"
     BACKGROUND_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets/pic1.png"
 )
 ```
 
-Inoltre, all'inizio del `main()` in C:
+In addition, at the beginning of `main()` in C:
 ```c
 int main(int argc, char* argv[]) {
     if (argc > 0 && argv && argv[0]) {
@@ -144,4 +144,4 @@ int main(int argc, char* argv[]) {
     forge_init(0);
     ...
 ```
-Questo consente all'engine di determinare esattamente se l'applicazione sta girando da `ms0:/PSP/GAME/<nome_cartella>` o dall'ambiente di sviluppo, risolvendo gli asset in modo trasparente e infallibile.
+This enables the engine to resolve whether the application is running from `ms0:/PSP/GAME/<folder>` or a local development environment, resolving asset paths transparently and reliably.

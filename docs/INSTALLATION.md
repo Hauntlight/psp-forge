@@ -1,13 +1,13 @@
-# Guida Completa all'Installazione & Configurazione di PSP-Forge 🛠️
+# Complete Installation & Setup Guide for PSP-Forge 🛠️
 
-Questa guida descrive l'intero processo di configurazione dell'ambiente di sviluppo per PlayStation Portable (PSP) su Linux (Ubuntu, Debian, Fedora, Arch e derivate), dall'installazione della toolchain ufficiale **PSPSDK** fino alla configurazione della suite **PSP-Forge** e dell'emulatore **PPSSPP**.
+This guide describes the complete setup process for PlayStation Portable (PSP) development on Linux (Ubuntu, Debian, Fedora, Arch, and derivatives), from installing the official **PSPSDK** toolchain to configuring the **PSP-Forge** suite and the **PPSSPP** emulator.
 
 ---
 
-## 1. Prerequisiti di Sistema
+## 1. System Prerequisites
 
-### Pacchetti di Base
-Assicurati di disporre degli strumenti essenziali di compilazione, Git, CMake e Python:
+### Base Packages
+Ensure you have the essential build tools, Git, CMake, and Python:
 
 ```bash
 sudo apt update
@@ -22,42 +22,42 @@ sudo apt install -y \
   ffmpeg
 ```
 
-### Moduli Python Necessari
-PSP-Forge richiede Python 3.10+ e la libreria `Pillow` per il processing delle texture e delle immagini:
+### Required Python Modules
+PSP-Forge requires Python 3.10+ and the `Pillow` library for image and texture processing:
 ```bash
 pip install Pillow
 ```
 
 ---
 
-## 2. Installazione della Toolchain PSPSDK (`pspdev`)
+## 2. Installing the PSPSDK Toolchain (`pspdev`)
 
-Per compilare codice C per l'architettura MIPS Allegrex della PSP è necessario il compilatore cross-platform `psp-gcc`.
+Compiling C code for the PSP's MIPS Allegrex architecture requires the cross-compiler `psp-gcc`.
 
-### Percorso Standard Consigliato: `/usr/local/pspdev`
+### Recommended Standard Path: `/usr/local/pspdev`
 
-Se hai scaricato o compilato la toolchain precompilata, estraila in `/usr/local/pspdev`:
+If you downloaded or built a precompiled toolchain, extract it to `/usr/local/pspdev`:
 ```bash
 sudo mkdir -p /usr/local/pspdev
 sudo chown -R $USER:$USER /usr/local/pspdev
-# (Estrai i binari del toolchain all'interno di /usr/local/pspdev)
+# (Extract toolchain binaries into /usr/local/pspdev)
 ```
 
-### Variabili d'Ambiente (`~/.bashrc` o `~/.zshrc`)
-Aggiungi le variabili d'ambiente indispensabili al tuo file di configurazione shell:
+### Environment Variables (`~/.bashrc` or `~/.zshrc`)
+Add the required environment variables to your shell configuration file:
 
 ```bash
-# Variabili d'ambiente Sony PSP Toolchain
+# Sony PSP Toolchain Environment Variables
 export PSPDEV="/usr/local/pspdev"
 export PATH="$PSPDEV/bin:$PATH"
 ```
 
-Ricarica il terminale con:
+Reload your terminal session with:
 ```bash
 source ~/.bashrc
 ```
 
-Verifica che la toolchain risponda correttamente:
+Verify that the toolchain is working properly:
 ```bash
 psp-gcc --version
 psp-config --pspsdk-path
@@ -65,16 +65,16 @@ psp-config --pspsdk-path
 
 ---
 
-## 3. Installazione e Build del Runtime PSP-Forge (`libpspforge`)
+## 3. Building and Installing the PSP-Forge Runtime (`libpspforge`)
 
-PSP-Forge include il micro-runtime in C99 ad alte prestazioni `libpspforge.a` che gestisce VRAM deterministica, display list GPU, audio multithread ed input.
+PSP-Forge includes the high-performance C99 micro-runtime `libpspforge.a`, managing deterministic VRAM, GPU display lists, multithreaded audio, input, collisions, animations, and scene states.
 
-Entra nella directory del runtime e compila la libreria statica:
+Navigate to the runtime directory and compile the static library:
 
 ```bash
 cd support_toolchain/psp-forge/runtime
 
-# Compilazione di tutti i moduli C
+# Compile all C source modules
 psp-gcc -Iinclude -I$PSPDEV/psp/include -I$PSPDEV/psp/sdk/include \
   -O3 -G0 -ffast-math -fomit-frame-pointer -fno-strict-aliasing \
   -Wall -Wextra -Wno-unused-parameter \
@@ -105,71 +105,86 @@ psp-gcc -Iinclude -I$PSPDEV/psp/include -I$PSPDEV/psp/sdk/include \
   -Wall -Wextra -Wno-unused-parameter \
   -c src/audio.c -o src/audio.o
 
-# Creazione dell'archivio statico .a
+psp-gcc -Iinclude -I$PSPDEV/psp/include -I$PSPDEV/psp/sdk/include \
+  -O3 -G0 -ffast-math -fomit-frame-pointer -fno-strict-aliasing \
+  -Wall -Wextra -Wno-unused-parameter \
+  -c src/physics.c -o src/physics.o
+
+psp-gcc -Iinclude -I$PSPDEV/psp/include -I$PSPDEV/psp/sdk/include \
+  -O3 -G0 -ffast-math -fomit-frame-pointer -fno-strict-aliasing \
+  -Wall -Wextra -Wno-unused-parameter \
+  -c src/anim.c -o src/anim.o
+
+psp-gcc -Iinclude -I$PSPDEV/psp/include -I$PSPDEV/psp/sdk/include \
+  -O3 -G0 -ffast-math -fomit-frame-pointer -fno-strict-aliasing \
+  -Wall -Wextra -Wno-unused-parameter \
+  -c src/scene.c -o src/scene.o
+
+# Create static library archive
 psp-ar rcs libpspforge.a src/*.o
 
-# Installazione negli include e nelle lib di sistema della toolchain
+# Install headers and library into toolchain system directories
 sudo cp include/psp_forge.h $PSPDEV/psp/include/psp_forge.h
 sudo cp libpspforge.a $PSPDEV/psp/lib/libpspforge.a
 ```
 
 ---
 
-## 4. Installazione della CLI `psp-forge`
+## 4. Installing the `psp-forge` CLI
 
-Per poter invocare `psp-forge` da qualsiasi cartella di lavoro:
+To invoke `psp-forge` globally from any working directory:
 
 ```bash
 cd support_toolchain/psp-forge
 
-# Rendi eseguibile il launcher
+# Make launcher executable
 chmod +x bin/psp-forge
 
-# Crea un symlink in /usr/local/bin
+# Create symlink in /usr/local/bin
 sudo ln -sf "$(pwd)/bin/psp-forge" /usr/local/bin/psp-forge
 ```
 
-Testa l'installazione digitando:
+Test the installation by running:
 ```bash
 psp-forge --help
 ```
 
 ---
 
-## 5. Configurazione dell'Emulatore PPSSPP
+## 5. Configuring the PPSSPP Emulator
 
-### Installazione di PPSSPP
-PPSSPP può essere installato tramite il proprio gestore pacchetti, Flatpak, oppure scaricando la versione standalone AppImage:
+### Installing PPSSPP
+PPSSPP can be installed via your system package manager, Flatpak, or by downloading the official standalone AppImage:
 
 ```bash
-# Opzione A: Tramite Flatpak (consigliato per distribuzioni moderne)
+# Option A: Via Flatpak (recommended for modern Linux distributions)
 flatpak install flathub org.ppsspp.PPSSPP
 
-# Opzione B: Tramite AppImage standalone
-# Scarica l'AppImage ufficiale dal sito ppsspp.org e rendila disponibile nel tuo PATH:
+# Option B: Standalone AppImage
+# Download the official AppImage from ppsspp.org and place it in your PATH:
 chmod +x PPSSPP.AppImage
 sudo mv PPSSPP.AppImage /usr/local/bin/ppsspp
 ```
 
-`psp-forge run` cercherà automaticamente l'eseguibile `ppsspp`, `PPSSPPQt` o l'installazione Flatpak nel tuo sistema. In alternativa, puoi passare il percorso dell'emulatore esplicitamente con:
+`psp-forge run` will automatically search for `ppsspp`, `PPSSPPQt`, or the Flatpak installation in your system. Alternatively, you can explicitly pass the emulator path with:
 ```bash
-psp-forge run --emulator /percorso/del/tuo/ppsspp
+psp-forge run --emulator /path/to/your/ppsspp
 ```
 
 ---
 
-## 6. Verifica Finale del Flusso di Lavoro
+## 6. End-to-End Workflow Verification
 
-Ora puoi creare e testare un gioco con 3 comandi:
+You can now create, build, and test a game in 3 simple commands:
 
 ```bash
-# 1. Crea il progetto da template
+# 1. Create a project from template
 psp-forge init test_game --template 2d
 cd test_game
 
-# 2. Compila asset ed eseguibile EBOOT.PBP
+# 2. Cook assets and compile EBOOT.PBP executable
 psp-forge build
 
-# 3. Lancia in emulatore
+# 3. Launch in emulator
 psp-forge run
 ```

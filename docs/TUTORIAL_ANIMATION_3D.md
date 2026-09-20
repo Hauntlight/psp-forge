@@ -1,81 +1,81 @@
-# Tutorial: Animazione 3D Procedurale & Gerarchica 💎
+# Tutorial: Procedural & Hierarchical 3D Animation 💎
 
-Questo tutorial spiega come implementare animazioni 3D su Sony PSP sfruttando lo stack di matrici hardware (`pspgum`) e calcoli matematici ad alte prestazioni, garantendo i 60 FPS senza sovraccaricare la CPU MIPS.
+This tutorial explains how to implement 3D animations on the Sony PSP leveraging the hardware matrix stack (`pspgum`) and high-performance mathematics, maintaining 60 FPS without overloading the MIPS CPU.
 
-La demo completa e funzionante associata a questa guida si trova in:
+The complete working demo associated with this guide is located in:
 `demos/demo_anim_3d/`
 
 ---
 
-## 1. Perché l'Animazione Procedurale & Gerarchica su PSP?
+## 1. Why Procedural & Hierarchical 3D Animation on the PSP?
 
-L'hardware della PSP possiede una Vector Floating Point Unit (VFPU) e un Graphics Engine con supporto per trasformazioni hardware $4 \times 4$.
-Caricare e riprodurre complessi scheletri scheletrici con pesi di vertici per CPU (*software vertex skinning*) consuma preziosi cicli CPU. L'approccio vincente e largamente utilizzato nei migliori titoli commerciali PSP consiste nel combinare:
+The PSP hardware features a Vector Floating Point Unit (VFPU) and a Graphics Engine with native $4 \times 4$ transformation matrix pipelines.
+Processing complex skeletal deformation with per-vertex weights on the CPU (*software vertex skinning*) quickly saturates MIPS clock cycles. The optimal and widely used approach in commercial PSP titles combines:
 
-1. **Animazioni Procedurali con Funzioni Armoniche**:
-   - Fluttuazione/Bobbing verticale: $Y(t) = Y_0 + \sin(t \cdot \omega) \cdot A$
-   - Rollio/Beccheggio dinamico (es. oscillazione barca, velivolo, gemma): $\theta(t) = \cos(t \cdot \omega) \cdot \alpha$
-   - Rotazione continua (ruote, eliche, oggetti collezionabili): $R_y(t) = t \cdot \text{speed}$
-2. **Animazione a Nodi Gerarchici**:
-   - Invece di deformare i singoli vertici, il modello viene diviso in sottomesh logiche collegate da trasformazioni a cascata tramite `sceGumPushMatrix()` / `sceGumPopMatrix()`.
-
----
-
-## 2. Preparazione dei Modelli 3D (`.obj` $\rightarrow$ `.p3d`)
-
-Nel nostro esempio abbiamo due entità distinte:
-- `pedestal.obj`: Piedistallo statico alla base.
-- `gem.obj`: Cristallo sfaccettato fluttuante centrato sull'origine $(0, 0, 0)$.
-
-Entrambi i modelli, quando elaborati da `psp-forge cook`, vengono convertiti nel formato binario compatto `.p3d` con vertici allineati a 16 byte per il DMA della GPU e bounding box AABB precalcolata.
+1. **Procedural Animations with Harmonic Functions**:
+   - Vertical floating/bobbing: $Y(t) = Y_0 + \sin(t \cdot \omega) \cdot A$
+   - Dynamic roll and tilt (e.g. boats, aircraft, floating gems): $\theta(t) = \cos(t \cdot \omega) \cdot \alpha$
+   - Continuous rotations (wheels, propellers, collectibles): $R_y(t) = t \cdot \text{speed}$
+2. **Hierarchical Node Animation**:
+   - Instead of per-vertex deformation, models are broken into submeshes connected via matrix cascades using `sceGumPushMatrix()` / `sceGumPopMatrix()`.
 
 ---
 
-## 3. Implementazione nel Codice C99
+## 2. Preparing 3D Models (`.obj` $\rightarrow$ `.p3d`)
 
-### A. Calcolo delle Traiettorie nel Game Loop
+In our example, we have two distinct entities:
+- `pedestal.obj`: Static base pedestal.
+- `gem.obj`: Faceted floating crystal centered at the origin $(0, 0, 0)$.
+
+Both models, when processed by `psp-forge cook`, are compiled into the compact `.p3d` binary format with 16-byte aligned vertices for GPU DMA and precomputed AABB bounding boxes.
+
+---
+
+## 3. C99 Implementation
+
+### A. Computing Trajectories in the Game Loop
 ```c
 float dt = forge_get_delta_time();
 time_acc += dt;
 
-// 1. Oscillazione verticale (frequenza 2.5 rad/s, ampiezza 0.35 unità)
+// 1. Vertical oscillation (frequency 2.5 rad/s, amplitude 0.35 units)
 float gem_bob_y = sinf(time_acc * 2.5f) * 0.35f;
 
-// 2. Rotazione continua attorno all'asse Y
+// 2. Continuous rotation around Y axis
 float gem_rot_y = time_acc * 2.0f;
 
-// 3. Inclinazione ritmica di beccheggio sull'asse X
+// 3. Harmonic tilt on X axis
 float gem_tilt  = cosf(time_acc * 1.5f) * 0.15f;
 ```
 
-### B. Telecamera Orbitale Mobile
-Possiamo impostare una telecamera in coordinate polari che ruota fluidamente attorno all'oggetto su comando del D-Pad o dello Stick analogico:
+### B. Mobile Orbiting Camera
+We can set up a camera in polar coordinates that smoothly orbits the scene controlled by the D-Pad or Analog Stick:
 ```c
 float cam_x = sinf(cam_angle) * cam_dist;
 float cam_z = -cosf(cam_angle) * cam_dist;
 
 forge_set_camera(
-    cam_x, cam_height, cam_z, // Posizione telecamera (Eye)
-    0.0f, 0.0f, 0.0f,         // Punto osservato (Target / Centro scena)
-    60.0f                     // Angolo di campo (FOV)
+    cam_x, cam_height, cam_z, // Camera position (Eye)
+    0.0f, 0.0f, 0.0f,         // Focus target (Center of scene)
+    60.0f                     // Field of view (FOV in degrees)
 );
 ```
 
-### C. Rendering con `forge_draw_mesh`
-Passiamo i parametri calcolati direttamente alla pipeline di trasformazione della GPU:
+### C. Rendering with `forge_draw_mesh`
+Pass computed parameters directly into the GPU transformation pipeline:
 ```c
 forge_begin_frame();
 forge_clear(0xFF140F0A);
 
-// Disegno del piedistallo fisso alla base
+// Draw static base pedestal
 forge_draw_mesh(ped_mesh, ped_tex, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
 
-// Disegno del cristallo animato
+// Draw procedurally animated crystal
 forge_draw_mesh(
     gem_mesh, gem_tex,
-    0.0f, 0.5f + gem_bob_y, 0.0f,  // Posizione Y animata armonicamente
-    gem_tilt, gem_rot_y, 0.0f,      // Rotazione Y + Beccheggio X
-    1.0f, 1.0f, 1.0f               // Scala
+    0.0f, 0.5f + gem_bob_y, 0.0f,  // Harmonically bobbing Y position
+    gem_tilt, gem_rot_y, 0.0f,      // Y spin + X tilt
+    1.0f, 1.0f, 1.0f               // Scale
 );
 
 forge_end_frame();
@@ -83,7 +83,7 @@ forge_end_frame();
 
 ---
 
-## 4. Come Compilare ed Eseguire la Demo
+## 4. Building and Running the Demo
 
 ```bash
 cd demos/demo_anim_3d

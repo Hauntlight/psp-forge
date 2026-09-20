@@ -1,53 +1,53 @@
-# Tutorial: Creare la Demo 2D ("Hero Starter") da Zero 🛡️
+# Tutorial: Building the 2D Demo ("Hero Starter") from Scratch 🛡️
 
-Questo tutorial guida passo per passo alla creazione completa della demo 2D interattiva, spiegando la gestione degli asset (sprite, audio e icone), la compilazione dell'eseguibile `EBOOT.PBP` e la scrittura del loop di gioco in C99.
+This tutorial walks through creating a full interactive 2D demo step-by-step, explaining asset management (sprites, audio, and menu icons), building the `EBOOT.PBP` executable, and writing the C99 game loop.
 
 ---
 
-## 1. Struttura del Progetto
+## 1. Project Structure
 
-Un progetto 2D ha la seguente anatomia essenziale:
+A 2D project has the following essential layout:
 
 ```text
 my_2d_game/
-├── CMakeLists.txt     # Script di compilazione con create_pbp_file e BUILD_PRX
-├── psp.toml           # Metadati del gioco per la CLI
-├── assets/            # File multimediali sorgente (PNG, WAV)
-│   ├── hero.png       # Sprite del personaggio principale
-│   ├── coin.wav       # Effetto sonoro al salto/interazione
-│   ├── icon0.png      # Icona per la XMB (144x80 PNG)
-│   └── pic1.png       # Sfondo per la XMB (480x272 PNG)
+├── CMakeLists.txt     # Build configuration with create_pbp_file and BUILD_PRX
+├── psp.toml           # Project metadata for CLI
+├── assets/            # Source media files (PNG, WAV)
+│   ├── hero.png       # Main character sprite
+│   ├── coin.wav       # Jump/interaction sound effect
+│   ├── icon0.png      # XMB icon (144x80 PNG)
+│   └── pic1.png       # XMB background (480x272 PNG)
 └── src/
-    └── main.c         # Codice sorgente C99
+    └── main.c         # C99 source code
 ```
 
 ---
 
-## 2. Preparazione degli Asset Multimediali
+## 2. Preparing Media Assets
 
-### A. Lo Sprite del Personaggio (`hero.png`)
-1. Disegna o esporta un'immagine PNG (anche con canale alfa/trasparenza RGBA).
-2. Per massimizzare le prestazioni della GPU della PSP, le dimensioni ideali sono potenze di due ($16 \times 16$, $32 \times 32$, $64 \times 64$, ecc.). Nel nostro esempio usiamo uno sprite $32 \times 32$.
-3. Salvalo in `assets/hero.png`.
+### A. Character Sprite (`hero.png`)
+1. Create or export a PNG image (transparency with RGBA alpha channels is supported).
+2. For optimal PSP GPU performance, dimensions should be powers of two ($16 \times 16$, $32 \times 32$, $64 \times 64$, etc.). In this example, we use a $32 \times 32$ sprite.
+3. Save it as `assets/hero.png`.
 
-### B. L'Effetto Sonoro (`coin.wav`)
-1. Salva un file audio in formato WAV PCM 16-bit (Mono o Stereo a 44100 Hz).
-2. Salvalo in `assets/coin.wav`.
+### B. Sound Effect (`coin.wav`)
+1. Save an audio file in 16-bit signed PCM WAV format (Mono or Stereo at 44100 Hz).
+2. Save it as `assets/coin.wav`.
 
-### C. Conversione con `psp-forge cook`
-Quando esegui:
+### C. Cooking Assets with `psp-forge cook`
+When you run:
 ```bash
 psp-forge cook
 ```
-Il compilatore automatico genererà in `build/assets/`:
-- `hero.tex`: Texture swizzlata a blocchi hardware da $16 \times 8$ byte in formato `GU_PSM_8888`.
-- `coin.snd`: Traccia audio raw PCM 16-bit allineata esattamente a multipli di 64 campioni.
+The cooker automatically outputs into `build/assets/`:
+- `hero.tex`: Swizzled texture in $16 \times 8$ byte hardware blocks using `GU_PSM_8888`.
+- `coin.snd`: 16-bit signed raw PCM audio buffer aligned to 64-sample increments.
 
 ---
 
-## 3. Configurazione di Compilazione (`CMakeLists.txt`)
+## 3. Build Configuration (`CMakeLists.txt`)
 
-Crea il file `CMakeLists.txt`:
+Create `CMakeLists.txt`:
 
 ```cmake
 cmake_minimum_required(VERSION 3.10)
@@ -72,7 +72,7 @@ target_link_libraries(psp_2d_game PRIVATE
     pspaudio pspdisplay pspctrl psprtc pspkernel m
 )
 
-# Cruciale: BUILD_PRX assicura la compatibilità sia su PPSSPP sia su hardware reale
+# Crucial: BUILD_PRX ensures compatibility with both PPSSPP and real hardware
 create_pbp_file(
     TARGET psp_2d_game
     TITLE "PSP 2D Starter"
@@ -84,9 +84,9 @@ create_pbp_file(
 
 ---
 
-## 4. Il Codice Sorgente C99 (`src/main.c`)
+## 4. C99 Source Code (`src/main.c`)
 
-Ecco l'implementazione completa con caricamento texture, input differenziale e barra FPS:
+Here is the complete implementation with texture loading, differential input, and an on-screen FPS indicator:
 
 ```c
 #include <psp_forge.h>
@@ -98,62 +98,62 @@ PSP_MAIN_THREAD_STACK_SIZE_KB(256);
 PSP_HEAP_SIZE_KB(16384);
 
 int main(int argc, char* argv[]) {
-    // 1. Risoluzione trasparente del percorso cartella su Memory Stick o PC
+    // 1. Transparent path resolution on Memory Stick or PC
     if (argc > 0 && argv && argv[0]) {
         forge_set_base_path(argv[0]);
     }
 
-    // 2. Inizializzazione della libreria grafica e audio
+    // 2. Initialize graphics and audio runtime
     forge_init(0);
 
-    // 3. Caricamento degli asset binari compilati
+    // 3. Load pre-cooked binary assets
     ForgeTexture* hero_tex = forge_texture_load("assets/hero.tex");
     ForgeSound*   coin_snd = forge_sound_load("assets/coin.snd");
 
-    // Coordinate e velocità del personaggio
+    // Player position and speed
     float hero_x = (FORGE_SCREEN_WIDTH  / 2.0f) - 16.0f;
     float hero_y = (FORGE_SCREEN_HEIGHT / 2.0f) - 16.0f;
-    float speed  = 160.0f; /* pixel al secondo */
+    float speed  = 160.0f; /* pixels per second */
 
     ForgeInput input;
 
-    // 4. Game loop principale
+    // 4. Main game loop
     while (forge_is_running()) {
         forge_input_poll(&input);
         float dt  = forge_get_delta_time();
         float fps = forge_get_fps();
 
-        // Movimento con D-Pad o Stick Analogico
+        // Movement via D-Pad or Analog Stick
         if (forge_input_is_held(&input, PSP_CTRL_LEFT)  || input.analog_x < -0.2f) hero_x -= speed * dt;
         if (forge_input_is_held(&input, PSP_CTRL_RIGHT) || input.analog_x >  0.2f) hero_x += speed * dt;
         if (forge_input_is_held(&input, PSP_CTRL_UP)    || input.analog_y < -0.2f) hero_y -= speed * dt;
         if (forge_input_is_held(&input, PSP_CTRL_DOWN)  || input.analog_y >  0.2f) hero_y += speed * dt;
 
-        // Limiti dello schermo (480x272)
+        // Screen boundaries (480x272)
         if (hero_x < 0.0f) hero_x = 0.0f;
         if (hero_x > (FORGE_SCREEN_WIDTH - 32.0f)) hero_x = FORGE_SCREEN_WIDTH - 32.0f;
         if (hero_y < 0.0f) hero_y = 0.0f;
         if (hero_y > (FORGE_SCREEN_HEIGHT - 32.0f)) hero_y = FORGE_SCREEN_HEIGHT - 32.0f;
 
-        // Pressione pulsante Croce per suonare l'effetto
+        // Press Cross button to trigger sound effect
         if (forge_input_is_pressed(&input, PSP_CTRL_CROSS)) {
             if (coin_snd) forge_sound_play(coin_snd, 0);
         }
 
-        // 5. Inizio del frame di rendering
+        // 5. Begin frame rendering
         forge_begin_frame();
-        forge_clear(0xFF2E1C12); /* Sfondo blu scuro */
+        forge_clear(0xFF2E1C12); /* Dark slate background */
 
-        // Disegno dello sprite 2D
+        // Render 2D textured sprite
         if (hero_tex) {
             forge_draw_sprite(
                 hero_tex,
-                hero_x, hero_y, 32.0f, 32.0f, // Coordinate e dimensioni a schermo
-                0.0f, 0.0f, 32.0f, 32.0f      // Coordinate UV sorgente
+                hero_x, hero_y, 32.0f, 32.0f, // Screen destination position and size
+                0.0f, 0.0f, 32.0f, 32.0f      // Source UV coordinates
             );
         }
 
-        // Barra indicatrice degli FPS (verde = 60fps)
+        // Performance HUD indicator bar (green = 60fps)
         {
             float bar_w = (fps / 60.0f) * 80.0f;
             if (bar_w > 80.0f) bar_w = 80.0f;
@@ -182,7 +182,7 @@ int main(int argc, char* argv[]) {
         forge_end_frame();
     }
 
-    // 6. Rilascio risorse
+    // 6. Free resources on shutdown
     if (hero_tex) forge_texture_free(hero_tex);
     if (coin_snd) forge_sound_free(coin_snd);
 
@@ -193,9 +193,9 @@ int main(int argc, char* argv[]) {
 
 ---
 
-## 5. Compilazione ed Esecuzione
+## 5. Building and Running
 
-Per compilare tutto ed avviare:
+To compile and launch:
 ```bash
 psp-forge build
 psp-forge run

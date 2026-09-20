@@ -1,39 +1,39 @@
-# Tutorial: Bounding Boxes & Rilevamento Collisioni (2D & 3D) 💥
+# Tutorial: Bounding Boxes & Collision Detection (2D & 3D) 💥
 
-Questo tutorial spiega come gestire hitboxes, trigger ed ostacoli solidi in 2D e 3D su PlayStation Portable utilizzando le funzioni matematiche native di collisione di **PSP-Forge**.
+This tutorial explains how to manage hitboxes, triggers, and solid physical obstacles in 2D and 3D on the PlayStation Portable using the native collision routines in **PSP-Forge**.
 
-La demo funzionante associata a questa guida si trova in:
+The complete working demo associated with this guide is located in:
 `demos/demo_collisions/`
 
 ---
 
-## 1. Tipi di Geometrie di Collisione Supportate
+## 1. Supported Collision Geometries
 
-Per evitare calcoli pesanti di intersezione poligonale complessa (che saturerebbero la CPU MIPS a 333 MHz), la fisica nei giochi arcade e d'azione si affida a **volumi delimitatori (Bounding Volumes)** veloci da verificare in pochi cicli di clock:
+To avoid heavy polygonal mesh-mesh intersection calculations (which would saturate the 333 MHz MIPS CPU), arcade and action games rely on **Bounding Volumes** that can be evaluated in minimal CPU clock cycles:
 
-| Geometria | Dimensione Memoria | Utilizzo Tipico |
+| Geometry | Memory Footprint | Typical Usage |
 |---|---|---|
-| **`ForgeRect`** (2D AABB) | 16 byte ($x, y, w, h$) | Personaggi, piattaforme, ostacoli quadrati, zone trigger |
-| **`ForgeCircle`** (2D Cerchio) | 12 byte ($x, y, r$) | Monete collezionabili, proiettili, sfere di energia |
-| **`ForgeAABB`** (3D Box) | 24 byte ($\min_{xyz}, \max_{xyz}$) | Veicoli, corsie, muri e blocchi di livello 3D |
-| **`ForgeSphere`** (3D Sfera) | 16 byte ($\text{centro}_{xyz}, r$) | Raggio di raccolta, proiettili 3D, sfere di culling |
+| **`ForgeRect`** (2D AABB) | 16 bytes ($x, y, w, h$) | Characters, platforms, rectangular obstacles, trigger zones |
+| **`ForgeCircle`** (2D Circle) | 12 bytes ($x, y, r$) | Collectible coins, projectiles, energy spheres |
+| **`ForgeAABB`** (3D Box) | 24 bytes ($\min_{xyz}, \max_{xyz}$) | Vehicles, track boundaries, walls, level props |
+| **`ForgeSphere`** (3D Sphere) | 16 bytes ($\text{center}_{xyz}, r$) | Proximity radii, 3D projectiles, culling spheres |
 
 ---
 
-## 2. L'API di Collisione in `psp_forge.h`
+## 2. Collision API in `psp_forge.h`
 
 ```c
-// Collisioni 2D
+// 2D Collisions
 bool forge_collide_rect_rect(ForgeRect a, ForgeRect b);
 bool forge_collide_rect_circle(ForgeRect r, ForgeCircle c);
 bool forge_collide_point_rect(float px, float py, ForgeRect r);
 
-// Collisioni 3D
+// 3D Collisions
 bool forge_collide_aabb_aabb(ForgeAABB a, ForgeAABB b);
 bool forge_collide_sphere_sphere(ForgeSphere a, ForgeSphere b);
 bool forge_collide_aabb_sphere(ForgeAABB b, ForgeSphere s);
 
-// Calcolo dell'AABB orientata nello spazio mondo a partire dalla mesh
+// Compute world-space transformed AABB for a mesh
 ForgeAABB forge_mesh_get_transformed_aabb(
     const ForgeMesh* mesh,
     float x, float y, float z,
@@ -43,43 +43,43 @@ ForgeAABB forge_mesh_get_transformed_aabb(
 
 ---
 
-## 3. Implementazione nel Codice C99
+## 3. C99 Implementation
 
-### A. Rilevamento Ostacolo Solido (Rettangolo vs Rettangolo)
-Per creare un ostacolo insormontabile, memorizziamo le coordinate precedenti del giocatore prima di applicare l'input. Se si verifica una sovrapposizione con l'ostacolo, ripristiniamo la posizione:
+### A. Solid Obstacle Detection (Rectangle vs Rectangle)
+To create an impassable obstacle, record the player's previous coordinates before applying input movement. If an overlap with the obstacle occurs, revert to the previous position:
 
 ```c
 float old_x = player_box.x;
 float old_y = player_box.y;
 
-// Applicazione movimento da input
+// Apply input movement
 player_box.x += move_x * speed * dt;
 player_box.y += move_y * speed * dt;
 
-// Controllo collisione
+// Check collision
 if (forge_collide_rect_rect(player_box, obstacle_box)) {
-    // Blocco del movimento: annulla lo spostamento
+    // Movement blocked: revert displacement
     player_box.x = old_x;
     player_box.y = old_y;
 }
 ```
 
-### B. Raccolta di un Oggetto / Moneta (Rettangolo vs Cerchio)
-Quando la hitbox rettangolare del giocatore tocca il raggio della moneta circolare:
+### B. Collectible Item / Coin Trigger (Rectangle vs Circle)
+When the player's rectangular hitbox overlaps the circular coin boundary:
 
 ```c
 if (forge_collide_rect_circle(player_box, coin_circle)) {
     score++;
     forge_sound_play(chime_snd, 0);
 
-    // Riposiziona la moneta in un nuovo punto della mappa
+    // Reposition coin randomly across map
     coin_circle.x = 60.0f + (float)(rand() % 360);
     coin_circle.y = 40.0f + (float)(rand() % 190);
 }
 ```
 
-### C. Collisioni 3D tra Modelli
-Per modelli 3D caricati tramite `forge_mesh_load()`, l'header del file `.p3d` include già i limiti AABB originali calcolati in fase di cooking. Per verificare se due modelli 3D si scontrano nel mondo di gioco:
+### C. 3D Model Collisions
+For 3D meshes loaded via `forge_mesh_load()`, the `.p3d` binary header contains precalculated local AABB bounds produced at cook time. To check if two 3D models collide in the game world:
 
 ```c
 ForgeAABB vehicle_box = forge_mesh_get_transformed_aabb(
@@ -91,19 +91,19 @@ ForgeAABB barrier_box = forge_mesh_get_transformed_aabb(
 );
 
 if (forge_collide_aabb_aabb(vehicle_box, barrier_box)) {
-    // Gestione impatto 3D
+    // Handle 3D collision impact
 }
 ```
 
 ---
 
-## 4. Come Provare la Demo
+## 4. Running the Demo
 
 ```bash
 cd demos/demo_collisions
 psp-forge build
 psp-forge run
 ```
-- Muovi il player con il D-pad o lo Stick analogico.
-- Prova ad urtare il blocco rosso: diventerà giallo e bloccherà il passaggio.
-- Raccogli la moneta dorata per riprodurre il suono di chime e vederla riposizionare.
+- Move the player box with the D-Pad or Analog Stick.
+- Hit the solid red block: it turns amber and blocks passage.
+- Collect the golden coin to hear the chime audio and watch it respawn.

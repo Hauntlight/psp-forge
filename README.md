@@ -1,136 +1,139 @@
 # PSP-Forge ⚔️
-> Modern Dev Suite & Micro-Engine per Sony PlayStation Portable (PSP)
+> Modern Dev Suite & Micro-Engine for Sony PlayStation Portable (PSP)
 
-PSP-Forge è un toolkit completo progettato per modernizzare, velocizzare e semplificare lo sviluppo di homebrew e giochi per Sony PSP su sistemi Linux e multipiattaforma.
+PSP-Forge is a complete toolkit designed to modernize, accelerate, and simplify homebrew and game development for Sony PSP on Linux and cross-platform systems.
 
-Il framework unifica in un'unica interfaccia a riga di comando l'orchestrazione del progetto, una pipeline automatica di compilazione delle risorse (Asset Cooker) e un micro-runtime in C99 ottimizzato per l'architettura MIPS Allegrex e l'eDRAM della console.
+The framework unifies project orchestration, an automated asset compilation pipeline (Asset Cooker), and a C99 micro-runtime optimized for the MIPS Allegrex architecture and console eDRAM into a single command-line interface.
 
 ---
 
-## 🚀 Caratteristiche Principali
+## 🚀 Key Features
 
 * **CLI Orchestrator (`psp-forge`):**
-  * `init`: Genera istantaneamente lo scheletro di un progetto (2D o 3D) con configurazione CMake e supporto IDE (include path automatici per VSCode/Clangd).
-  * `cook`: Compila e ottimizza automaticamente texture, modelli 3D e tracce audio.
-  * `build`: Cross-compilazione veloce nativa MIPS e packaging del file `EBOOT.PBP`.
-  * `run`: Avvio diretto su emulatore PPSSPP o notifica path.
-  * `clean`: Pulizia delle cache e dei file intermedi di compilazione.
+  * `init`: Instantly generates a project skeleton (2D or 3D) with CMake configuration and IDE support (automatic include paths for VSCode/Clangd).
+  * `cook`: Automatically compiles and optimizes textures, 3D models, and audio tracks.
+  * `build`: Fast native MIPS cross-compilation and `EBOOT.PBP` packaging.
+  * `run`: Direct launch on PPSSPP emulator or executable path reporting.
+  * `clean`: Cleans build caches and intermediate compilation artifacts.
 
 * **Asset Pipeline ("The Cooker"):**
-  * **Texture Swizzling:** Riordino automatico dei pixel a blocchi di $16 \times 8$ byte per eliminare i cache miss della GPU PSP.
-  * **POT Padding & Formati:** Normalizzazione a potenze di due ($2^n \le 512$), supporto RGBA8888, RGBA5551, RGBA4444 e quantizzazione CLUT a 8-bit (256 colori) e 4-bit (16 colori).
-  * **3D Geometry Packer:** Conversione di modelli Wavefront `.obj` nel formato compatto `.p3d` con vertici allineati a 16 byte e calcolo bounding box AABB.
-  * **Audio Transcoder:** Conversione automatica in PCM stereo/mono signed 16-bit a 44100 Hz con blocchi allineati a 64 campioni.
+  * **Texture Swizzling:** Automatic $16 \times 8$ byte block pixel reordering to eliminate PSP GPU cache misses.
+  * **POT Padding & Formats:** Normalization to powers of two ($2^n \le 512$), support for RGBA8888, RGBA5551, RGBA4444, and CLUT quantization to 8-bit (256 colors) and 4-bit (16 colors).
+  * **3D Geometry Packer:** Conversion of Wavefront `.obj` models into compact `.p3d` binary format with 16-byte aligned vertices and AABB bounding box calculation.
+  * **Audio Transcoder:** Automatic conversion into signed 16-bit PCM stereo/mono at 44100 Hz with 64-sample aligned buffers.
 
-* **Micro-Runtime C99 (`libpspforge`):**
-  * **Zero Allocation a Runtime:** Allocazione statica deterministica della VRAM da 2 MB (Draw buffer, Display buffer, Z-buffer e Texture scratchpad).
-  * **Gestione Hardware Trasparente:** Display List allineate a 16 byte e flush automatico della D-Cache (`sceKernelDcacheWritebackRange`).
-  * **Pipeline 2D & 3D:** Wrapper per sprite batching e matrici `pspgum`, con culling dinamico per assegnare ai 4 slot hardware (`GU_LIGHT0..3`) le luci più vicine.
-  * **Input con Edge Detection:** Rilevamento di pulsanti premuti (*pressed*), rilasciati (*released*) e tenuti premuti (*held*), con stick analogico normalizzato in $[-1.0, 1.0]$.
-  * **Audio Multithread:** Thread audio dedicato ad alta priorità (`0x12`) con doppio buffer PCM da 2048 campioni per non penalizzare il framerate grafico.
+* **C99 Micro-Runtime (`libpspforge`):**
+  * **Zero Allocation at Runtime:** Deterministic static 2 MB VRAM allocator (Draw buffer, Display buffer, Z-buffer, and Texture scratchpad).
+  * **Transparent Hardware Management:** 16-byte aligned Display Lists and automatic D-Cache flush (`sceKernelDcacheWritebackRange`).
+  * **2D & 3D Pipeline:** Wrappers for sprite batching and `pspgum` matrices, with dynamic distance-based culling to assign the nearest lights to the 4 hardware slots (`GU_LIGHT0..3`).
+  * **Input with Edge Detection:** Discrete detection for button pressed (*pressed*), released (*released*), and held (*held*), with analog stick normalized to $[-1.0, 1.0]$.
+  * **Multithreaded Audio:** Dedicated high-priority audio thread (`0x12`) with dual 2048-sample PCM buffers to prevent degrading graphics framerate.
 
 ---
 
-## 📦 Struttura del Progetto
+## 📦 Project Structure
 
 ```text
 psp-forge/
 ├── bin/
-│   └── psp-forge              # Launcher eseguibile da terminale
+│   └── psp-forge              # Terminal executable launcher
 ├── cli/
 │   ├── psp_forge.py           # Core CLI Orchestrator
-│   ├── config.py              # Parser psp.toml
-│   ├── cookers/               # Moduli di compilazione asset
+│   ├── config.py              # psp.toml parser
+│   ├── cookers/               # Asset compilation modules
 │   │   ├── texture.py         # Swizzler, POT padding, CLUT
 │   │   ├── mesh.py            # OBJ parser -> .p3d vertex buffer
 │   │   └── audio.py           # Audio WAV PCM transcoder
-│   └── templates/             # Progetti base per psp-forge init
+│   └── templates/             # Starter templates for psp-forge init
 │       ├── 2d_starter/
 │       └── 3d_runner/
-├── runtime/                   # libpspforge (Micro-Engine C99)
+├── runtime/                   # libpspforge (C99 Micro-Engine)
 │   ├── include/
-│   │   └── psp_forge.h        # API pubblica
+│   │   └── psp_forge.h        # Public API header
 │   ├── src/
-│   │   ├── core.c             # GU Init, DisplayList loop, Callback HOME
-│   │   ├── vram.c             # Layout VRAM 2MB
-│   │   ├── video2d.c          # Sprite e texture swizzlate
-│   │   ├── video3d.c          # Mesh 3D, matrici e 4 luci HW
-│   │   ├── input.c            # Controller differenziale
-│   │   └── audio.c            # Thread PCM prioritario
+│   │   ├── core.c             # GU Init, DisplayList loop, HOME Callback
+│   │   ├── vram.c             # 2MB VRAM layout
+│   │   ├── video2d.c          # Sprites and swizzled textures
+│   │   ├── video3d.c          # 3D Meshes, matrices, and 4 HW lights
+│   │   ├── input.c            # Differential controller polling
+│   │   ├── physics.c          # 2D & 3D collision detection
+│   │   ├── anim.c             # 2D flipbook sprite animation
+│   │   ├── scene.c            # Multi-scene state machine
+│   │   └── audio.c            # Priority PCM thread
 │   └── CMakeLists.txt
-├── docs/                      # Documentazione tecnica e guide API
-└── tests/                     # Suite di test unitari
+├── docs/                      # Technical documentation and API guides
+└── tests/                     # Unit test suite
 ```
 
 ---
 
-## 🛠️ Prerequisiti & Setup
+## 🛠️ Prerequisites & Setup
 
-### 1. Toolchain PSPSDK
-Assicurati che `PSPDEV` sia impostato e presente nel tuo `PATH`:
+### 1. PSPSDK Toolchain
+Ensure `PSPDEV` is set and available in your `PATH`:
 ```bash
 export PSPDEV="/usr/local/pspdev"
 export PATH="$PATH:$PSPDEV/bin"
 ```
-Verifica con:
+Verify with:
 ```bash
 psp-config --pspsdk-path
 ```
 
-### 2. Dipendenze Python
-* Python 3.11+ (modulo standard `tomllib`)
-* `Pillow` per l'elaborazione immagini (`pip install Pillow`)
+### 2. Python Dependencies
+* Python 3.11+ (standard library `tomllib`)
+* `Pillow` for image processing (`pip install Pillow`)
 
 ---
 
-## ⚡ Guida Rapida
+## ⚡ Quickstart
 
-### 1. Crea un nuovo progetto
+### 1. Create a new project
 ```bash
 ./bin/psp-forge init my_game --template 2d
 cd my_game
 ```
 
-### 2. Compila le risorse grafiche e audio
+### 2. Cook assets (textures, models, audio)
 ```bash
 psp-forge cook
 ```
 
-### 3. Compila il binario per PSP (`EBOOT.PBP`)
+### 3. Build PSP binary (`EBOOT.PBP`)
 ```bash
 psp-forge build
 ```
 
-### 4. Esegui su PPSSPP
+### 4. Run in PPSSPP
 ```bash
 psp-forge run
 ```
 
 ---
 
-## 📚 Guide & Documentazione Approfondita
+## 📚 Guides & In-Depth Documentation
 
-* ⚙️ **[Guida all'Installazione & Configurazione](docs/INSTALLATION.md)**: Setup da zero della toolchain PSPSDK (`pspdev`), compilazione del runtime `libpspforge`, installazione della CLI e configurazione di PPSSPP.
-* 🛡️ **[Tutorial 2D: "Hero Starter" da Zero](docs/TUTORIAL_2D.md)**: Guida passo per passo alla creazione del gioco 2D (sprite RGBA, audio, edge detection dei tasti e limiti schermo).
-* 🏎️ **[Tutorial 3D: "Track Runner" da Zero](docs/TUTORIAL_3D.md)**: Guida completa al 3D (modello geometrico OBJ, texture mapping, telecamera in prospettiva, salto e corsa infinita a 60 FPS).
-* 🏃 **[Tutorial: Animazione 2D (Spritesheet & Flipbook)](docs/TUTORIAL_ANIMATION_2D.md)**: Gestione delle animazioni 2D con `ForgeSpriteAnim` (demo: `demos/demo_anim_2d`).
-* 💎 **[Tutorial: Animazione 3D (Procedurale & Gerarchica)](docs/TUTORIAL_ANIMATION_3D.md)**: Animazioni matriciali, oscillazioni armoniche e rotazioni continue (demo: `demos/demo_anim_3d`).
-* 🎬 **[Tutorial: Gestione Scene con `ForgeScene`](docs/TUTORIAL_SCENES.md)**: Architettura multi-scena con caricamento e rilascio controllato della memoria da 24 MB (demo: `demos/demo_scenes`).
-* 💥 **[Tutorial: Bounding Boxes & Collisioni](docs/TUTORIAL_COLLISIONS.md)**: Rilevamento collisioni 2D (`ForgeRect`, `ForgeCircle`) e 3D (`ForgeAABB`, `ForgeSphere`) (demo: `demos/demo_collisions`).
-* 🎨 **[Asset Pipeline & Formati Multimediali (Cooker)](docs/ASSET_PIPELINE.md)**: Come convertire file comuni (**PNG, JPG, Wavefront OBJ, WAV, MP3**) nei formati binari nativi ad alte prestazioni della console (`.tex`, `.p3d`, `.snd`) con texture swizzling, POT padding e warning sui limiti hardware.
-* 🕹️ **[API C99 Runtime (`libpspforge`)](docs/API.md)**: Riferimento completo su inizializzazione hardware, VRAM, ciclo di rendering 2D/3D, audio multithread, collisioni, animazioni e scene.
+* ⚙️ **[Installation & Setup Guide](docs/INSTALLATION.md)**: From-scratch setup of the PSPSDK (`pspdev`) toolchain, building the `libpspforge` runtime, CLI installation, and PPSSPP configuration.
+* 🛡️ **[2D Tutorial: "Hero Starter" from Scratch](docs/TUTORIAL_2D.md)**: Step-by-step guide to building a 2D game (RGBA sprites, audio, button edge detection, screen boundaries).
+* 🏎️ **[3D Tutorial: "Track Runner" from Scratch](docs/TUTORIAL_3D.md)**: Comprehensive 3D development guide (Wavefront OBJ, texture mapping, perspective camera, jumping gravity, 60 FPS endless track).
+* 🏃 **[Tutorial: 2D Animation (Spritesheets & Flipbook)](docs/TUTORIAL_ANIMATION_2D.md)**: 2D sprite animations with `ForgeSpriteAnim` (demo: `demos/demo_anim_2d`).
+* 💎 **[Tutorial: 3D Animation (Procedural & Hierarchical)](docs/TUTORIAL_ANIMATION_3D.md)**: Matrix transformations, harmonic floating oscillations, and continuous rotations (demo: `demos/demo_anim_3d`).
+* 🎬 **[Tutorial: Scene Management with `ForgeScene`](docs/TUTORIAL_SCENES.md)**: Multi-scene game state architecture with memory management in 24 MB RAM (demo: `demos/demo_scenes`).
+* 💥 **[Tutorial: Bounding Boxes & Collisions](docs/TUTORIAL_COLLISIONS.md)**: 2D (`ForgeRect`, `ForgeCircle`) and 3D (`ForgeAABB`, `ForgeSphere`) collision detection (demo: `demos/demo_collisions`).
+* 🎨 **[Asset Pipeline & Media Formats (Cooker)](docs/ASSET_PIPELINE.md)**: How to convert common files (**PNG, JPG, Wavefront OBJ, WAV, MP3**) into hardware-optimized binary formats (`.tex`, `.p3d`, `.snd`) with texture swizzling, POT padding, and hardware budget warnings.
+* 🕹️ **[C99 Runtime API Reference (`libpspforge`)](docs/API.md)**: Complete API reference for hardware init, VRAM management, 2D/3D rendering loop, multithreaded audio, collisions, animations, and scenes.
 
 ---
 
-## 🕹️ Demo Pronte all'Uso (`demos/`)
+## 🕹️ Ready-to-Run Demos (`demos/`)
 
-Il repository include 4 demo complete con asset generati esenti da copyright:
-1. **`demos/demo_anim_2d/`**: Personaggio animato che cammina a 60 FPS con D-Pad/Stick e spritesheet flipbook.
-2. **`demos/demo_anim_3d/`**: Cristallo fluttuante con oscillazione armonica e telecamera orbitale a 360°.
-3. **`demos/demo_scenes/`**: Sistema multi-scena completo (Menu Principale $\rightarrow$ Livello di Gioco $\rightarrow$ Ritorno al menu con Select).
-4. **`demos/demo_collisions/`**: Rilevamento collisioni con ostacoli solidi e raccolta monete con trigger sonoro.
+The repository includes 4 complete demos with copyright-free procedural assets:
+1. **`demos/demo_anim_2d/`**: Animated walking knight character at 60 FPS with D-Pad/Stick and flipbook spritesheet.
+2. **`demos/demo_anim_3d/`**: Floating glowing 3D crystal gem with harmonic bobbing and 360° orbital camera.
+3. **`demos/demo_scenes/`**: Complete multi-scene state machine (Title Menu $\rightarrow$ Gameplay $\rightarrow$ Return with Select).
+4. **`demos/demo_collisions/`**: Solid rectangular obstacles (AABB) and collectible coins (Circle) with sound triggers.
 
-Per compilare ed eseguire qualsiasi demo:
+To build and run any demo:
 ```bash
 cd demos/demo_anim_2d
 psp-forge build
@@ -139,21 +142,21 @@ psp-forge run
 
 ---
 
-## 🎮 Distribuzione su PSP Reale
+## 🎮 Real Hardware Deployment
 
-I template generati includono la direttiva `BUILD_PRX` in `CMakeLists.txt` per garantire compatibilità immediata sia con PPSSPP che con console reale dotata di Custom Firmware (CFW):
-1. Copia la cartella del progetto contenente `EBOOT.PBP` e la sottocartella `assets/` sulla Memory Stick della console:
+Generated templates include the `BUILD_PRX` directive in `CMakeLists.txt` for instant compatibility with both PPSSPP and real PSP hardware running Custom Firmware (CFW):
+1. Copy the project folder containing `EBOOT.PBP` and the `assets/` subfolder to your console's Memory Stick:
    ```text
-   ms0:/PSP/GAME/mio_gioco/
+   ms0:/PSP/GAME/my_game/
    ├── EBOOT.PBP
    └── assets/
        ├── icon0.png
        ├── pic1.png
-       └── [file .tex, .p3d, .snd...]
+       └── [.tex, .p3d, .snd files...]
    ```
-2. Avvia il gioco direttamente dal menu *Gioco → Memory Stick* della PSP!
+2. Launch the game directly from the PSP *Game → Memory Stick* menu!
 
 ---
 
-## 📄 Licenza
-Rilasciato sotto licenza [MIT](LICENSE).
+## 📄 License
+Released under the [MIT](LICENSE) license.
