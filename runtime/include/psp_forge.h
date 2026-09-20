@@ -164,6 +164,94 @@ void        forge_sound_play(const ForgeSound* snd, uint8_t loop);
 void        forge_sound_stop(void);
 bool        forge_sound_is_playing(void);
 
+/* ========================================================================= */
+/* 2D & 3D Collision Detection                                               */
+/* ========================================================================= */
+
+typedef struct {
+    float x, y, w, h;
+} ForgeRect;
+
+typedef struct {
+    float x, y, radius;
+} ForgeCircle;
+
+typedef struct {
+    ScePspFVector3 min;
+    ScePspFVector3 max;
+} ForgeAABB;
+
+typedef struct {
+    ScePspFVector3 center;
+    float radius;
+} ForgeSphere;
+
+bool forge_collide_rect_rect(ForgeRect a, ForgeRect b);
+bool forge_collide_rect_circle(ForgeRect r, ForgeCircle c);
+bool forge_collide_point_rect(float px, float py, ForgeRect r);
+
+bool forge_collide_aabb_aabb(ForgeAABB a, ForgeAABB b);
+bool forge_collide_sphere_sphere(ForgeSphere a, ForgeSphere b);
+bool forge_collide_aabb_sphere(ForgeAABB b, ForgeSphere s);
+ForgeAABB forge_mesh_get_transformed_aabb(
+    const ForgeMesh* mesh,
+    float x, float y, float z,
+    float sx, float sy, float sz
+);
+
+/* ========================================================================= */
+/* 2D Sprite Animation                                                       */
+/* ========================================================================= */
+
+typedef struct {
+    const ForgeTexture* texture;
+    int   frame_w;
+    int   frame_h;
+    int   num_frames;
+    int   columns;
+    float fps;
+    float timer;
+    int   current_frame;
+    bool  loop;
+    bool  is_playing;
+} ForgeSpriteAnim;
+
+void forge_anim2d_init(
+    ForgeSpriteAnim* anim,
+    const ForgeTexture* tex,
+    int frame_w, int frame_h,
+    int num_frames,
+    float fps,
+    bool loop
+);
+void forge_anim2d_update(ForgeSpriteAnim* anim, float dt);
+void forge_anim2d_draw(
+    const ForgeSpriteAnim* anim,
+    float x, float y,
+    float w, float h
+);
+void forge_anim2d_set_frame(ForgeSpriteAnim* anim, int frame);
+
+/* ========================================================================= */
+/* Scene Management                                                          */
+/* ========================================================================= */
+
+typedef struct ForgeScene ForgeScene;
+typedef void (*ForgeSceneCallback)(ForgeScene* scene, float dt);
+
+struct ForgeScene {
+    const char*        name;
+    void*              user_data;
+    ForgeSceneCallback on_init;
+    ForgeSceneCallback on_update;
+    ForgeSceneCallback on_draw;
+    ForgeSceneCallback on_destroy;
+};
+
+void        forge_scene_set(ForgeScene* scene);
+ForgeScene* forge_scene_get_current(void);
+void        forge_scene_update_and_draw(float dt);
+
 #ifdef __cplusplus
 }
 #endif

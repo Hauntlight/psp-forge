@@ -164,13 +164,25 @@ def cook_mesh(input_path: str, output_path: str) -> dict:
         f.write(header)
         f.write(vtx_data)
 
+    file_size = len(header) + len(vtx_data)
+    triangle_count = vertex_count // 3
+
+    # PSP Hardware Budget Warnings
+    # Recommended frame budget: 20k-50k triangles total at 60 FPS.
+    if triangle_count > 3000:
+        print(f"  [!] WARNING (PSP Budget): Mesh '{os.path.basename(input_path)}' has {triangle_count} triangles (> 3000).")
+        print(f"      Total recommended scene budget is 20k-50k triangles for 60 FPS. Consider simplifying or using LOD.")
+    if file_size > 256 * 1024:
+        print(f"  [!] WARNING (PSP RAM): Mesh '{os.path.basename(input_path)}' size is {file_size / 1024:.1f} KB (> 256 KB).")
+        print(f"      PSP-1000 has only ~24MB usable RAM. Large models can cause memory fragmentation.")
+
     return {
         "output_path": output_path,
         "vertex_count": vertex_count,
-        "triangle_count": vertex_count // 3,
+        "triangle_count": triangle_count,
         "aabb_min": (min_x, min_y, min_z),
         "aabb_max": (max_x, max_y, max_z),
         "center": (cx, cy, cz),
         "radius": radius,
-        "file_size": len(header) + len(vtx_data)
+        "file_size": file_size
     }

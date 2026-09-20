@@ -126,6 +126,13 @@ def cook_texture(
     img = Image.open(input_path).convert("RGBA")
     orig_w, orig_h = img.size
 
+    # Hard hardware limit: PSP GE cannot sample textures larger than 512x512
+    if orig_w > 512 or orig_h > 512:
+        raise ValueError(
+            f"Texture '{os.path.basename(input_path)}' ({orig_w}x{orig_h}) exceeds Sony PSP hardware maximum of 512x512. "
+            "Please downscale this image before cooking."
+        )
+
     pwr2_w = next_power_of_two(orig_w)
     pwr2_h = next_power_of_two(orig_h)
 
@@ -134,6 +141,13 @@ def cook_texture(
     min_h = 8
     pwr2_w = max(pwr2_w, min_w)
     pwr2_h = max(pwr2_h, min_h)
+
+    # Estimate VRAM usage
+    bpp = 4 if psm == PSM_8888 else (2 if psm in (PSM_5551, PSM_4444, PSM_5650) else 1)
+    vram_bytes = pwr2_w * pwr2_h * bpp
+    if vram_bytes > 512 * 1024:
+        print(f"  [!] WARNING (PSP VRAM): Texture '{os.path.basename(input_path)}' padded to {pwr2_w}x{pwr2_h} ({vram_bytes / 1024:.0f} KB in {format_type}).")
+        print(f"      Fast eDRAM texture scratchpad is only ~656 KB. Consider using RGBA5551/5650 (16-bit) or indexed CLUT8.")
 
     # Pad image to power of two
     padded_img = Image.new("RGBA", (pwr2_w, pwr2_h), (0, 0, 0, 0))

@@ -126,3 +126,70 @@ Invia il suono al thread audio dedicato (`0x12` priority). Se `loop` è `1`, il 
 
 ### `void forge_sound_stop(void)`
 Interrompe la riproduzione corrente.
+
+---
+
+## 7. Collisioni 2D & 3D
+
+### Geometrie Supportate:
+```c
+typedef struct { float x, y, w, h; } ForgeRect;
+typedef struct { float x, y, radius; } ForgeCircle;
+typedef struct { ScePspFVector3 min; ScePspFVector3 max; } ForgeAABB;
+typedef struct { ScePspFVector3 center; float radius; } ForgeSphere;
+```
+
+### Funzioni di Collisione:
+* `bool forge_collide_rect_rect(ForgeRect a, ForgeRect b);`: Intersezione tra due rettangoli 2D (AABB).
+* `bool forge_collide_rect_circle(ForgeRect r, ForgeCircle c);`: Intersezione tra rettangolo e cerchio 2D.
+* `bool forge_collide_point_rect(float px, float py, ForgeRect r);`: Punto interno al rettangolo.
+* `bool forge_collide_aabb_aabb(ForgeAABB a, ForgeAABB b);`: Intersezione tra due volumi AABB 3D.
+* `bool forge_collide_sphere_sphere(ForgeSphere a, ForgeSphere b);`: Intersezione tra due sfere 3D.
+* `bool forge_collide_aabb_sphere(ForgeAABB b, ForgeSphere s);`: Intersezione tra box AABB e sfera 3D.
+* `ForgeAABB forge_mesh_get_transformed_aabb(const ForgeMesh* mesh, float x, float y, float z, float sx, float sy, float sz);`: Calcola l'AABB della mesh posizionata e scalata nello spazio mondo.
+
+---
+
+## 8. Animazione 2D (`ForgeSpriteAnim`)
+
+Gestione di spritesheet flipbook per personaggi e oggetti animati:
+
+```c
+typedef struct {
+    const ForgeTexture* texture;
+    int   frame_w, frame_h;
+    int   num_frames, columns;
+    float fps, timer;
+    int   current_frame;
+    bool  loop, is_playing;
+} ForgeSpriteAnim;
+```
+
+* `void forge_anim2d_init(ForgeSpriteAnim* anim, const ForgeTexture* tex, int fw, int fh, int frames, float fps, bool loop);`: Inizializza l'animazione calcolando automaticamente le colonne dello spritesheet.
+* `void forge_anim2d_update(ForgeSpriteAnim* anim, float dt);`: Avanza il timer dell'animazione in base al tempo del frame.
+* `void forge_anim2d_draw(const ForgeSpriteAnim* anim, float x, float y, float w, float h);`: Renderizza a schermo il fotogramma corrente.
+* `void forge_anim2d_set_frame(ForgeSpriteAnim* anim, int frame);`: Imposta direttamente un fotogramma (es. frame 0 per Idle).
+
+---
+
+## 9. Gestione Scene (`ForgeScene`)
+
+Architettura a stati per schermate multiple (Menu, Gameplay, Game Over) con gestione automatica e isolata della memoria:
+
+```c
+typedef struct ForgeScene ForgeScene;
+typedef void (*ForgeSceneCallback)(ForgeScene* scene, float dt);
+
+struct ForgeScene {
+    const char*        name;
+    void*              user_data;
+    ForgeSceneCallback on_init;     // Invocato all'attivazione (carica asset)
+    ForgeSceneCallback on_update;   // Invocato ogni frame (logica e input)
+    ForgeSceneCallback on_draw;     // Invocato ogni frame (rendering video)
+    ForgeSceneCallback on_destroy;  // Invocato alla disattivazione (rilascia asset)
+};
+```
+
+* `void forge_scene_set(ForgeScene* scene);`: Pianifica la transizione alla nuova scena (eseguita all'inizio del ciclo di frame successivo).
+* `ForgeScene* forge_scene_get_current(void);`: Restituisce il puntatore alla scena attualmente attiva.
+* `void forge_scene_update_and_draw(float dt);`: Esegue la sequenza di aggiornamento e rendering della scena corrente.

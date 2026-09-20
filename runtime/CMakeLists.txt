@@ -22,6 +22,9 @@ set(PSPFORGE_SOURCES
     src/video3d.c
     src/input.c
     src/audio.c
+    src/physics.c
+    src/anim.c
+    src/scene.c
 )
 
 add_library(pspforge STATIC ${PSPFORGE_SOURCES})

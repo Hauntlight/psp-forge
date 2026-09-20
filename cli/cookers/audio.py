@@ -170,11 +170,18 @@ def cook_audio(
         if temp_wav_path and os.path.exists(temp_wav_path):
             os.remove(temp_wav_path)
 
+    file_size = len(header) + len(pcm_bytes)
+
+    # PSP RAM Budget Warning (PSP-1000 has ~24MB usable RAM)
+    if file_size > 2 * 1024 * 1024:
+        print(f"  [!] WARNING (PSP Audio RAM): Sound '{os.path.basename(input_path)}' occupies {file_size / (1024 * 1024):.1f} MB in RAM.")
+        print(f"      PSP-1000 has ~24MB usable RAM. Sound effects should typically be short (< 500 KB).")
+
     return {
         "output_path": output_path,
         "channels": nchannels,
         "sample_rate": framerate,
         "sample_count": total_frames,
         "duration_sec": total_frames / framerate,
-        "file_size": len(header) + len(pcm_bytes)
+        "file_size": file_size
     }

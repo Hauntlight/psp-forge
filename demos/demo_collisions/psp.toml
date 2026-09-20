@@ -1,0 +1,20 @@
+[project]
+name = "demo_collisions"
+title = "PSP Collision Detection Demo"
+id = "ULUS00006"
+version = "1.0.0"
+
+[build]
+entry = "src/main.c"
+opt_level = "-O2"
+alloc_heap_mb = 20
+
+[assets]
+input_dir = "assets"
+output_dir = "build/assets"
+autowatch = true
+
+[deploy]
+emulator_bin = "ppsspp"
+icon = "assets/icon0.png"
+background = "assets/pic1.png"

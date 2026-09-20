@@ -111,10 +111,31 @@ psp-forge run
 ## 📚 Guide & Documentazione Approfondita
 
 * ⚙️ **[Guida all'Installazione & Configurazione](docs/INSTALLATION.md)**: Setup da zero della toolchain PSPSDK (`pspdev`), compilazione del runtime `libpspforge`, installazione della CLI e configurazione di PPSSPP.
-* 🛡️ **[Tutorial: Creare la Demo 2D ("Hero Starter") da Zero](docs/TUTORIAL_2D.md)**: Guida passo per passo alla creazione del gioco 2D (sprite RGBA, audio, edge detection dei tasti e limiti schermo).
-* 🏎️ **[Tutorial: Creare la Demo 3D ("Track Runner") da Zero](docs/TUTORIAL_3D.md)**: Guida completa al 3D (modello geometrico OBJ, texture mapping, telecamera in prospettiva, salto e corsa infinita a 60 FPS).
-* 🎨 **[Asset Pipeline & Formati Multimediali (Cooker)](docs/ASSET_PIPELINE.md)**: Come convertire file comuni (**PNG, JPG, Wavefront OBJ, WAV, MP3**) nei formati binari nativi ad alte prestazioni della console (`.tex`, `.p3d`, `.snd`) con texture swizzling e allineamento DMA.
-* 🕹️ **[API C99 Runtime (`libpspforge`)](docs/API.md)**: Riferimento completo su inizializzazione hardware, VRAM, ciclo di rendering 2D/3D, audio multithread e input edge-detection.
+* 🛡️ **[Tutorial 2D: "Hero Starter" da Zero](docs/TUTORIAL_2D.md)**: Guida passo per passo alla creazione del gioco 2D (sprite RGBA, audio, edge detection dei tasti e limiti schermo).
+* 🏎️ **[Tutorial 3D: "Track Runner" da Zero](docs/TUTORIAL_3D.md)**: Guida completa al 3D (modello geometrico OBJ, texture mapping, telecamera in prospettiva, salto e corsa infinita a 60 FPS).
+* 🏃 **[Tutorial: Animazione 2D (Spritesheet & Flipbook)](docs/TUTORIAL_ANIMATION_2D.md)**: Gestione delle animazioni 2D con `ForgeSpriteAnim` (demo: `demos/demo_anim_2d`).
+* 💎 **[Tutorial: Animazione 3D (Procedurale & Gerarchica)](docs/TUTORIAL_ANIMATION_3D.md)**: Animazioni matriciali, oscillazioni armoniche e rotazioni continue (demo: `demos/demo_anim_3d`).
+* 🎬 **[Tutorial: Gestione Scene con `ForgeScene`](docs/TUTORIAL_SCENES.md)**: Architettura multi-scena con caricamento e rilascio controllato della memoria da 24 MB (demo: `demos/demo_scenes`).
+* 💥 **[Tutorial: Bounding Boxes & Collisioni](docs/TUTORIAL_COLLISIONS.md)**: Rilevamento collisioni 2D (`ForgeRect`, `ForgeCircle`) e 3D (`ForgeAABB`, `ForgeSphere`) (demo: `demos/demo_collisions`).
+* 🎨 **[Asset Pipeline & Formati Multimediali (Cooker)](docs/ASSET_PIPELINE.md)**: Come convertire file comuni (**PNG, JPG, Wavefront OBJ, WAV, MP3**) nei formati binari nativi ad alte prestazioni della console (`.tex`, `.p3d`, `.snd`) con texture swizzling, POT padding e warning sui limiti hardware.
+* 🕹️ **[API C99 Runtime (`libpspforge`)](docs/API.md)**: Riferimento completo su inizializzazione hardware, VRAM, ciclo di rendering 2D/3D, audio multithread, collisioni, animazioni e scene.
+
+---
+
+## 🕹️ Demo Pronte all'Uso (`demos/`)
+
+Il repository include 4 demo complete con asset generati esenti da copyright:
+1. **`demos/demo_anim_2d/`**: Personaggio animato che cammina a 60 FPS con D-Pad/Stick e spritesheet flipbook.
+2. **`demos/demo_anim_3d/`**: Cristallo fluttuante con oscillazione armonica e telecamera orbitale a 360°.
+3. **`demos/demo_scenes/`**: Sistema multi-scena completo (Menu Principale $\rightarrow$ Livello di Gioco $\rightarrow$ Ritorno al menu con Select).
+4. **`demos/demo_collisions/`**: Rilevamento collisioni con ostacoli solidi e raccolta monete con trigger sonoro.
+
+Per compilare ed eseguire qualsiasi demo:
+```bash
+cd demos/demo_anim_2d
+psp-forge build
+psp-forge run
+```
 
 ---
 

@@ -39,7 +39,7 @@ class TestTextureCooker(unittest.TestCase):
                 magic, ver, psm, orig_w, orig_h, p2w, p2h, swz, has_pal, pal_cnt = struct.unpack("<4sHHHHHHBBH", header[:20])
                 self.assertEqual(magic, b"PTEX")
                 self.assertEqual(ver, 1)
-                self.assertEqual(psm, 0) # 8888
+                self.assertEqual(psm, 3) # GU_PSM_8888 = 3 per pspgu.h
                 self.assertEqual(orig_w, 32)
                 self.assertEqual(orig_h, 20)
                 self.assertEqual(p2w, 32)
