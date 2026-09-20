@@ -46,7 +46,7 @@
 PSP-Forge bridges the gap between modern game development developer experiences (DX) and classic bare-metal embedded consoles. Built specifically for the **Sony PlayStation Portable (PSP-1000/2000/3000/Go/Street)**, PSP-Forge unifies:
 1. An intuitive **CLI tool** (`init`, `cook`, `build`, `run`, `clean`) that abstracts away arcane toolchain incantations, sets up IDE include paths, and packages EBOOTs.
 2. A deterministic **Asset Pipeline ("The Cooker")** that automatically optimizes textures (GPU swizzling, power-of-two padding, CLUT palettization), 3D Wavefront OBJ models, and 44.1 kHz PCM audio, complete with **hardware budget warning checks**.
-3. A clean, zero-allocation **C99 Micro-Engine (`libpspforge.a`)** providing pre-baked 2D sprite rendering, 3D perspective pipelines, collision detection, sprite flipbook animations, multi-scene management, and background audio streaming out of the box.
+3. A clean **C99 Micro-Engine (`libpspforge.a`)** built on PSPSDK, providing zero per-frame runtime allocations, pre-baked 2D sprite rendering, 3D perspective pipelines with hierarchical transforms, collision detection, sprite flipbook animations, multi-scene management, and dedicated asynchronous audio playback out of the box.
 
 ---
 
@@ -104,13 +104,13 @@ The PSP hardware imposes strict memory and rasterizer constraints. The Asset Coo
   * ⚠️ Warns if uncompressed audio clips exceed 2 MB RAM.
 
 ### 3. C99 Micro-Engine (`libpspforge`)
-* **Zero Runtime Dynamic Allocation**: Deterministic 2 MB VRAM allocator partitioning eDRAM into Draw buffer ($512\text{ KB}$), Display buffer ($512\text{ KB}$), Z-Buffer ($512\text{ KB}$), and Texture scratchpad ($512\text{ KB}$).
+* **Zero Per-Frame Dynamic Allocation**: Zero allocations during the 60 FPS game loop. The 2 MB on-chip eDRAM is deterministically partitioned: Draw buffer ($512\text{ KB}$), Display buffer ($512\text{ KB}$), 16-bit Depth buffer ($256\text{ KB}$), and Texture scratchpad ($768\text{ KB}$). Dynamic allocations (`malloc`, `free`) are strictly confined to asset loading during scene transitions.
 * **Display List Management**: Safe 16-byte aligned GU Display Lists with automatic D-Cache writeback (`sceKernelDcacheWritebackRange`).
-* **2D & 3D Unified Pipeline**: Sprite batching, perspective projection, camera view matrix, and dynamic distance-based culling for the 4 hardware light slots (`GU_LIGHT0..3`).
-* **Collision Engine**: Lightweight, allocation-free 2D primitives (`ForgeRect`, `ForgeCircle`) and 3D bounding volumes (`ForgeAABB`, `ForgeSphere`) with fast intersection tests.
+* **2D & 3D Pipelines**: Fast 2D sprite batching (`GU_SPRITES`), perspective projection, camera view matrix, articulated hierarchical node transforms (`forge_draw_mesh_node`), and distance-based virtual light culling.
+* **Collision Engine**: Lightweight, allocation-free 2D primitives (`ForgeRect`, `ForgeCircle`) and 3D bounding volumes (`ForgeAABB`, `ForgeSphere`) with analytical intersection tests.
 * **2D Flipbook Animation**: Grid-based spritesheet player (`ForgeSpriteAnim`) with frame timing, UV coordinate computation, and playback loops.
-* **Scene Manager (`ForgeScene`)**: Lifecycle state machine (`on_init`, `on_update`, `on_draw`, `on_destroy`) guaranteeing strict asset unloading when navigating between Title Menus and Gameplay levels in $24\text{ MB}$ RAM.
-* **Multithreaded Audio**: High-priority audio thread (`0x12`) operating double 2048-sample stereo PCM ring buffers, preventing audio stutter even during heavy 3D rendering.
+* **Scene Manager (`ForgeScene`)**: Lifecycle state machine (`on_init`, `on_update`, `on_draw`, `on_destroy`) enabling clean memory recycling between Title Menus and Gameplay levels in $24\text{ MB}$ RAM.
+* **Multithreaded Audio**: Dedicated high-priority audio thread (`0x12`) feeding 512-sample stereo PCM chunks (`AUDIO_BUFFER_SAMPLES 512`) from RAM buffers, eliminating audio stutter even under 3D load.
 
 ---
 
@@ -297,11 +297,11 @@ type: homebrew-game-development-suite-and-c99-micro-engine
 target_hardware: Sony PlayStation Portable (MIPS Allegrex R4000 @ 333MHz, 24MB RAM, 2MB eDRAM)
 programming_languages: [C99, Python 3.11, CMake]
 architecture_features:
-  - Zero-allocation static 2MB VRAM layout (Draw, Display, Depth, Texture scratchpad)
+  - Zero per-frame allocations with static 2MB VRAM layout (512K Draw, 512K Disp, 256K Depth, 768K Scratchpad)
   - 16x8 block texture swizzling to prevent GE cache line stalls
   - Power-of-two texture padding up to 512x512 with CLUT4/CLUT8 quantization
   - Compact .p3d vertex streaming with precomputed AABB bounds
-  - High-priority 44.1kHz PCM audio thread with double 2048-sample buffers
+  - High-priority 44.1kHz PCM audio thread with 512-sample stereo buffer
   - Lightweight AABB, Sphere, Rect, and Circle collision detection
   - Multi-scene lifecycle architecture (ForgeScene on_init, on_update, on_draw, on_destroy)
   - 100% vibe-coded via human-directed AI pair programming

@@ -106,29 +106,29 @@ Releases mesh memory.
 Sets up view and perspective projection matrices with a $16:9$ aspect ratio.
 
 ### `void forge_set_light(uint8_t id, float x, float y, float z, uint32_t color_rgba, float intensity)`
-Registers a virtual scene light (up to 16 simultaneous lights supported).
+Registers a virtual scene light (up to 16 simultaneous lights supported). Nearest 4 lights are dynamically sorted and mapped to hardware registers `GU_LIGHT0..3` via `forge_cull_and_apply_lights()`.
 
 ### `void forge_draw_mesh(const ForgeMesh* mesh, const ForgeTexture* tex, float x, float y, float z, float rx, float ry, float rz, float sx, float sy, float sz)`
-Applies model transformations (translation, rotation, scale), automatically selects the 4 nearest lights for hardware registers `GU_LIGHT0..3`, enables backface culling, and renders mesh primitives.
+Applies model transformations (translation, rotation, scale), performs light culling and binding for the 4 nearest lights, and renders mesh primitives. Note: `forge_draw_mesh_current()` renders textures using `GU_TFX_REPLACE` (unlit mode) to guarantee maximum fillrate at 60 FPS.
 
 ### `void forge_draw_mesh_current(const ForgeMesh* mesh, const ForgeTexture* tex)`
 Renders a mesh using the current transformation matrix on the active `GU_MODEL` Gum stack without modifying or resetting it. Ideal for custom hierarchical matrix operations.
 
 ### `void forge_draw_mesh_node(const ForgeMesh* mesh, const ForgeTexture* tex, float x, float y, float z, float rx, float ry, float rz, float sx, float sy, float sz)`
-Convenience helper for hierarchical articulated rigs: pushes a matrix onto the `pspgum` stack (`sceGumPushMatrix()`), applies relative translation, rotation, and scale, draws the mesh with lighting via `forge_draw_mesh_current`, and pops the matrix (`sceGumPopMatrix()`).
+Convenience helper for hierarchical articulated rigs: pushes a matrix onto the `pspgum` stack (`sceGumPushMatrix()`), applies relative translation, rotation, and scale, draws the mesh via `forge_draw_mesh_current`, and pops the matrix (`sceGumPopMatrix()`).
 
 ---
 
 ## 6. Multithreaded Audio Subsystem
 
 ### `ForgeSound* forge_sound_load(const char* path)`
-Loads a `.snd` audio file transcoded to signed 16-bit 44100 Hz PCM.
+Loads a `.snd` audio file transcoded to signed 16-bit 44100 Hz PCM into main RAM with D-Cache writeback.
 
 ### `void forge_sound_free(ForgeSound* snd)`
 Releases audio buffer memory.
 
 ### `void forge_sound_play(const ForgeSound* snd, uint8_t loop)`
-Dispatches audio playback to the dedicated high-priority thread (`0x12`). When `loop` is `1`, the audio loops continuously (ideal for background music).
+Dispatches audio playback to the dedicated high-priority thread (`0x12`), which transfers 512-sample stereo PCM chunks to the hardware audio channel via `sceAudioChReserve`. When `loop` is `1`, the audio loops continuously (ideal for background music).
 
 ### `void forge_sound_stop(void)`
 Stops active audio playback.
