@@ -111,6 +111,12 @@ Registers a virtual scene light (up to 16 simultaneous lights supported).
 ### `void forge_draw_mesh(const ForgeMesh* mesh, const ForgeTexture* tex, float x, float y, float z, float rx, float ry, float rz, float sx, float sy, float sz)`
 Applies model transformations (translation, rotation, scale), automatically selects the 4 nearest lights for hardware registers `GU_LIGHT0..3`, enables backface culling, and renders mesh primitives.
 
+### `void forge_draw_mesh_current(const ForgeMesh* mesh, const ForgeTexture* tex)`
+Renders a mesh using the current transformation matrix on the active `GU_MODEL` Gum stack without modifying or resetting it. Ideal for custom hierarchical matrix operations.
+
+### `void forge_draw_mesh_node(const ForgeMesh* mesh, const ForgeTexture* tex, float x, float y, float z, float rx, float ry, float rz, float sx, float sy, float sz)`
+Convenience helper for hierarchical articulated rigs: pushes a matrix onto the `pspgum` stack (`sceGumPushMatrix()`), applies relative translation, rotation, and scale, draws the mesh with lighting via `forge_draw_mesh_current`, and pops the matrix (`sceGumPopMatrix()`).
+
 ---
 
 ## 6. Multithreaded Audio Subsystem

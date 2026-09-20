@@ -171,27 +171,8 @@ void forge_cull_and_apply_lights(float obj_x, float obj_y, float obj_z) {
     }
 }
 
-void forge_draw_mesh(
-    const ForgeMesh* mesh,
-    const ForgeTexture* tex,
-    float x, float y, float z,
-    float rx_rad, float ry_rad, float rz_rad,
-    float sx, float sy, float sz
-) {
+void forge_draw_mesh_current(const ForgeMesh* mesh, const ForgeTexture* tex) {
     if (!mesh || !mesh->vertices) return;
-
-    sceGumMatrixMode(GU_MODEL);
-    sceGumLoadIdentity();
-
-    ScePspFVector3 pos = { x, y, z };
-    sceGumTranslate(&pos);
-
-    if (rx_rad != 0.0f) sceGumRotateX(rx_rad);
-    if (ry_rad != 0.0f) sceGumRotateY(ry_rad);
-    if (rz_rad != 0.0f) sceGumRotateZ(rz_rad);
-
-    ScePspFVector3 sc = { sx, sy, sz };
-    sceGumScale(&sc);
 
     /* Setup Culling and Depth */
     sceGuEnable(GU_DEPTH_TEST);
@@ -223,3 +204,55 @@ void forge_draw_mesh(
     sceGumUpdateMatrix();
     sceGumDrawArray(GU_TRIANGLES, mesh->vertex_format, mesh->count, 0, mesh->vertices);
 }
+
+void forge_draw_mesh(
+    const ForgeMesh* mesh,
+    const ForgeTexture* tex,
+    float x, float y, float z,
+    float rx_rad, float ry_rad, float rz_rad,
+    float sx, float sy, float sz
+) {
+    if (!mesh || !mesh->vertices) return;
+
+    sceGumMatrixMode(GU_MODEL);
+    sceGumLoadIdentity();
+
+    ScePspFVector3 pos = { x, y, z };
+    sceGumTranslate(&pos);
+
+    if (rx_rad != 0.0f) sceGumRotateX(rx_rad);
+    if (ry_rad != 0.0f) sceGumRotateY(ry_rad);
+    if (rz_rad != 0.0f) sceGumRotateZ(rz_rad);
+
+    ScePspFVector3 sc = { sx, sy, sz };
+    sceGumScale(&sc);
+
+    forge_draw_mesh_current(mesh, tex);
+}
+
+void forge_draw_mesh_node(
+    const ForgeMesh* mesh,
+    const ForgeTexture* tex,
+    float x, float y, float z,
+    float rx_rad, float ry_rad, float rz_rad,
+    float sx, float sy, float sz
+) {
+    if (!mesh || !mesh->vertices) return;
+
+    sceGumPushMatrix();
+
+    ScePspFVector3 pos = { x, y, z };
+    sceGumTranslate(&pos);
+
+    if (rx_rad != 0.0f) sceGumRotateX(rx_rad);
+    if (ry_rad != 0.0f) sceGumRotateY(ry_rad);
+    if (rz_rad != 0.0f) sceGumRotateZ(rz_rad);
+
+    ScePspFVector3 sc = { sx, sy, sz };
+    sceGumScale(&sc);
+
+    forge_draw_mesh_current(mesh, tex);
+
+    sceGumPopMatrix();
+}
+

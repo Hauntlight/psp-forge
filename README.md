@@ -145,6 +145,7 @@ psp-forge/
 ├── demos/                     # Complete, ready-to-run showcase games
 │   ├── demo_anim_2d/          # 2D animated knight with flipbook spritesheet
 │   ├── demo_anim_3d/          # Floating rotating 3D gem with lighting
+│   ├── demo_anim_3d_v2/       # 3D articulated humanoid rig with walk/jump/slash
 │   ├── demo_scenes/           # Title Menu <-> Game state transitions
 │   └── demo_collisions/       # AABB and Circle collision detection & audio
 ├── docs/                      # Full documentation, tutorials, and API reference
@@ -199,18 +200,19 @@ See [docs/INSTALLATION.md](docs/INSTALLATION.md) for complete from-scratch toolc
 
 ## 🕹️ Showcase Demos
 
-Four complete, standalone showcase demos are provided in `demos/`. All demos feature 100% copyright-free procedural assets:
+Five complete, standalone showcase demos are provided in `demos/`. All demos feature 100% copyright-free procedural assets:
 
 | Demo | Directory | Key Techniques Demonstrated | Assets Included |
 |---|---|---|---|
 | **2D Animation** | [`demos/demo_anim_2d/`](demos/demo_anim_2d/) | 60 FPS flipbook sprite animation via `ForgeSpriteAnim`, dynamic state switching (Walk/Idle) | `walker_sheet.png` (4-frame $32\times 32$ sheet), UI icons |
 | **3D Animation** | [`demos/demo_anim_3d/`](demos/demo_anim_3d/) | Floating crystal with sinusoidal bobbing ($Y$), tilt ($X$), continuous rotation ($Y$), and orbital camera | `gem.obj`, `gem.png`, `pedestal.obj`, `pedestal.png` |
+| **3D Humanoid V2** | [`demos/demo_anim_3d_v2/`](demos/demo_anim_3d_v2/) | Articulated humanoid rig with `pspgum` matrix cascade, walk/run cycle, jump physics, sword slash, 360° orbiting camera | `knight_bot.png`, `arena.png`, `shadow.png`, modular OBJ body parts |
 | **Scene Manager** | [`demos/demo_scenes/`](demos/demo_scenes/) | Clean Title Menu $\leftrightarrow$ Game transitions with automated memory freeing in 24 MB RAM | `menu_banner.png`, `player.png`, synthesized `click.wav` |
 | **Collisions** | [`demos/demo_collisions/`](demos/demo_collisions/) | Solid AABB obstacles (`rect_rect`) and collectible coins (`rect_circle`) with audio chime | `box_player.png`, `coin_item.png`, synthesized `collect.wav` |
 
 Run any demo in seconds:
 ```bash
-cd demos/demo_anim_2d
+cd demos/demo_anim_3d_v2
 psp-forge build
 psp-forge run
 ```
@@ -223,7 +225,7 @@ psp-forge run
 * 🛡️ **[2D Game Tutorial: "Hero Starter"](docs/TUTORIAL_2D.md)**: Complete guide to 2D sprites, controller edge detection, screen clamping, and audio.
 * 🏎️ **[3D Game Tutorial: "Track Runner"](docs/TUTORIAL_3D.md)**: 3D meshes, UV texturing, perspective projection, camera physics, and gravity.
 * 🏃 **[Tutorial: 2D Animation & Spritesheets](docs/TUTORIAL_ANIMATION_2D.md)**: Using `ForgeSpriteAnim` for flipbook animations.
-* 💎 **[Tutorial: 3D Animation & Procedural Motion](docs/TUTORIAL_ANIMATION_3D.md)**: Mathematical transforms, floating oscillations, and rotations.
+* 💎 **[Tutorial: 3D Animation & Hierarchical Rigs](docs/TUTORIAL_ANIMATION_3D.md)**: Mathematical transforms, floating oscillations, rotations, and articulated humanoid skeletons.
 * 🎬 **[Tutorial: Scene Management (`ForgeScene`)](docs/TUTORIAL_SCENES.md)**: Designing multi-screen games while preventing RAM leaks.
 * 💥 **[Tutorial: Bounding Boxes & Collisions](docs/TUTORIAL_COLLISIONS.md)**: Implementing 2D and 3D collision detection.
 * 🎨 **[Asset Pipeline & Format Specification](docs/ASSET_PIPELINE.md)**: Deep dive into swizzling, POT scaling, `.p3d`, `.snd`, and hardware budgets.

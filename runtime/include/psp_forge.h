@@ -130,6 +130,16 @@ void       forge_draw_mesh(
     float sx, float sy, float sz
 );
 
+void       forge_draw_mesh_current(const ForgeMesh* mesh, const ForgeTexture* tex);
+
+void       forge_draw_mesh_node(
+    const ForgeMesh* mesh,
+    const ForgeTexture* tex,
+    float x, float y, float z,
+    float rx_rad, float ry_rad, float rz_rad,
+    float sx, float sy, float sz
+);
+
 /* ========================================================================= */
 /* Hardware Lighting & Culling                                               */
 /* ========================================================================= */

@@ -1,0 +1,20 @@
+[project]
+name = "demo_anim_3d_v2"
+title = "PSP 3D Humanoid Animation Demo V2"
+id = "ULUS00007"
+version = "2.0.0"
+
+[build]
+entry = "src/main.c"
+opt_level = "-O2"
+alloc_heap_mb = 20
+
+[assets]
+input_dir = "assets"
+output_dir = "build/assets"
+autowatch = true
+
+[deploy]
+emulator_bin = "ppsspp"
+icon = "assets/icon0.png"
+background = "assets/pic1.png"
