@@ -108,5 +108,31 @@ psp-forge run
 
 ---
 
+## 📚 Guide & Documentazione Approfondita
+
+* ⚙️ **[Guida all'Installazione & Configurazione](docs/INSTALLATION.md)**: Setup da zero della toolchain PSPSDK (`pspdev`), compilazione del runtime `libpspforge`, installazione della CLI e configurazione di PPSSPP.
+* 🛡️ **[Tutorial: Creare la Demo 2D ("Hero Starter") da Zero](docs/TUTORIAL_2D.md)**: Guida passo per passo alla creazione del gioco 2D (sprite RGBA, audio, edge detection dei tasti e limiti schermo).
+* 🏎️ **[Tutorial: Creare la Demo 3D ("Track Runner") da Zero](docs/TUTORIAL_3D.md)**: Guida completa al 3D (modello geometrico OBJ, texture mapping, telecamera in prospettiva, salto e corsa infinita a 60 FPS).
+* 🎨 **[Asset Pipeline & Formati Multimediali (Cooker)](docs/ASSET_PIPELINE.md)**: Come convertire file comuni (**PNG, JPG, Wavefront OBJ, WAV, MP3**) nei formati binari nativi ad alte prestazioni della console (`.tex`, `.p3d`, `.snd`) con texture swizzling e allineamento DMA.
+* 🕹️ **[API C99 Runtime (`libpspforge`)](docs/API.md)**: Riferimento completo su inizializzazione hardware, VRAM, ciclo di rendering 2D/3D, audio multithread e input edge-detection.
+
+---
+
+## 🎮 Distribuzione su PSP Reale
+
+I template generati includono la direttiva `BUILD_PRX` in `CMakeLists.txt` per garantire compatibilità immediata sia con PPSSPP che con console reale dotata di Custom Firmware (CFW):
+1. Copia la cartella del progetto contenente `EBOOT.PBP` e la sottocartella `assets/` sulla Memory Stick della console:
+   ```text
+   ms0:/PSP/GAME/mio_gioco/
+   ├── EBOOT.PBP
+   └── assets/
+       ├── icon0.png
+       ├── pic1.png
+       └── [file .tex, .p3d, .snd...]
+   ```
+2. Avvia il gioco direttamente dal menu *Gioco → Memory Stick* della PSP!
+
+---
+
 ## 📄 Licenza
 Rilasciato sotto licenza [MIT](LICENSE).

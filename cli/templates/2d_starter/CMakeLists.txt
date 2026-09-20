@@ -36,6 +36,7 @@ target_link_libraries(psp_2d_game PRIVATE
 create_pbp_file(
     TARGET psp_2d_game
     TITLE "PSP 2D Starter"
+    BUILD_PRX
     ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon0.png"
     BACKGROUND_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets/pic1.png"
 )

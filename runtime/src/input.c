@@ -9,7 +9,9 @@ void forge_input_poll(ForgeInput* input) {
     if (!input) return;
 
     SceCtrlData pad;
-    sceCtrlPeekBufferPositive(&pad, 1);
+    /* ReadBufferPositive: latching — blocks until the next hardware sample is
+     * ready. Guarantees we never process the same button state twice per frame. */
+    sceCtrlReadBufferPositive(&pad, 1);
 
     input->held     = pad.Buttons;
     input->pressed  = pad.Buttons & ~s_prev_buttons;

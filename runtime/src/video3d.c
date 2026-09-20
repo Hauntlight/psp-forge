@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <malloc.h>
 
 typedef struct __attribute__((packed)) {
     char     magic[4];       /* "PM3D" */
@@ -20,23 +21,23 @@ typedef struct __attribute__((packed)) {
 static ForgeLight s_virtual_lights[FORGE_MAX_VIRTUAL_LIGHTS];
 
 ForgeMesh* forge_mesh_load(const char* path) {
-    FILE* f = forge_fopen(path, "rb");
-    if (!f) return NULL;
+    SceUID fd = forge_io_open(path);
+    if (fd < 0) return NULL;
 
     Pm3dHeader hdr;
-    if (fread(&hdr, sizeof(Pm3dHeader), 1, f) != 1) {
-        fclose(f);
+    if (sceIoRead(fd, &hdr, sizeof(Pm3dHeader)) != (int)sizeof(Pm3dHeader)) {
+        sceIoClose(fd);
         return NULL;
     }
 
     if (memcmp(hdr.magic, "PM3D", 4) != 0) {
-        fclose(f);
+        sceIoClose(fd);
         return NULL;
     }
 
     ForgeMesh* mesh = (ForgeMesh*)calloc(1, sizeof(ForgeMesh));
     if (!mesh) {
-        fclose(f);
+        sceIoClose(fd);
         return NULL;
     }
 
@@ -52,12 +53,12 @@ ForgeMesh* forge_mesh_load(const char* path) {
     mesh->vertices = memalign(16, data_size);
     if (!mesh->vertices) {
         free(mesh);
-        fclose(f);
+        sceIoClose(fd);
         return NULL;
     }
 
-    fread(mesh->vertices, data_size, 1, f);
-    fclose(f);
+    sceIoRead(fd, mesh->vertices, data_size);
+    sceIoClose(fd);
 
     /* Flush D-Cache to guarantee DMA read consistency */
     sceKernelDcacheWritebackRange(mesh->vertices, data_size);
@@ -105,11 +106,8 @@ void forge_clear_lights(void) {
 }
 
 void forge_cull_and_apply_lights(float obj_x, float obj_y, float obj_z) {
-    /* Score each active light by distance to the object */
-    typedef struct {
-        int   id;
-        float dist_sq;
-    } LightCandidate;
+    /* Build candidate list: score each active light by squared distance */
+    typedef struct { int id; float dist_sq; } LightCandidate;
 
     LightCandidate cand[FORGE_MAX_VIRTUAL_LIGHTS];
     int count = 0;
@@ -119,26 +117,34 @@ void forge_cull_and_apply_lights(float obj_x, float obj_y, float obj_z) {
         float dx = s_virtual_lights[i].pos[0] - obj_x;
         float dy = s_virtual_lights[i].pos[1] - obj_y;
         float dz = s_virtual_lights[i].pos[2] - obj_z;
-        cand[count].id = i;
+        cand[count].id      = i;
         cand[count].dist_sq = dx * dx + dy * dy + dz * dz;
         count++;
     }
 
-    /* Sort ascending: closest 4 lights */
-    for (int i = 0; i < count - 1; ++i) {
-        for (int j = i + 1; j < count; ++j) {
-            if (cand[j].dist_sq < cand[i].dist_sq) {
-                LightCandidate tmp = cand[i];
-                cand[i] = cand[j];
-                cand[j] = tmp;
+    /* Partial insertion sort: find the 4 nearest in O(count * 4).
+     * Much cheaper than full O(n²) bubble sort for n=16, count<=4 hardware slots. */
+    int slots = (count < 4) ? count : 4;
+    for (int s = 0; s < slots; ++s) {
+        int min_idx = s;
+        for (int j = s + 1; j < count; ++j) {
+            if (cand[j].dist_sq < cand[min_idx].dist_sq) {
+                min_idx = j;
             }
+        }
+        if (min_idx != s) {
+            LightCandidate tmp = cand[s];
+            cand[s] = cand[min_idx];
+            cand[min_idx] = tmp;
         }
     }
 
+    /* Ambient material so mesh is never fully black when lit */
+    sceGuModelColor(0xFF404040, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000);
+
     /* Assign up to 4 lights to hardware slots GU_LIGHT0..3 */
-    int assigned = 0;
     for (int slot = 0; slot < 4; ++slot) {
-        if (slot < count) {
+        if (slot < slots) {
             int lid = cand[slot].id;
             ScePspFVector3 lpos = {
                 s_virtual_lights[lid].pos[0],
@@ -147,19 +153,18 @@ void forge_cull_and_apply_lights(float obj_x, float obj_y, float obj_z) {
             };
             sceGuEnable(GU_LIGHT0 + slot);
             sceGuLight(slot, GU_POINTLIGHT, GU_DIFFUSE_AND_SPECULAR, &lpos);
-            sceGuLightColor(slot, GU_DIFFUSE, s_virtual_lights[lid].color);
+            sceGuLightColor(slot, GU_DIFFUSE,  s_virtual_lights[lid].color);
             sceGuLightColor(slot, GU_SPECULAR, 0xFFFFFFFF);
             float att = (s_virtual_lights[lid].intensity > 0.001f)
                 ? (1.0f / s_virtual_lights[lid].intensity)
                 : 1.0f;
             sceGuLightAtt(slot, 1.0f, 0.05f * att, 0.005f * att);
-            assigned++;
         } else {
             sceGuDisable(GU_LIGHT0 + slot);
         }
     }
 
-    if (assigned > 0) {
+    if (slots > 0) {
         sceGuEnable(GU_LIGHTING);
     } else {
         sceGuDisable(GU_LIGHTING);
@@ -190,23 +195,31 @@ void forge_draw_mesh(
 
     /* Setup Culling and Depth */
     sceGuEnable(GU_DEPTH_TEST);
-    sceGuEnable(GU_CULL_FACE);
-    sceGuFrontFace(GU_CCW);
+    sceGuDepthFunc(GU_GEQUAL);
+    sceGuDisable(GU_CULL_FACE);
 
-    /* Apply closest lights */
-    forge_cull_and_apply_lights(x, y, z);
+    /* Ensure fragment color is fully opaque white so modulation preserves texture */
+    sceGuColor(0xFFFFFFFF);
 
     /* Texture configuration */
     if (tex && tex->data) {
         sceGuEnable(GU_TEXTURE_2D);
         sceGuTexMode(tex->format, 0, 0, tex->is_swizzled ? 1 : 0);
         sceGuTexImage(0, tex->pwr2_w, tex->pwr2_h, tex->pwr2_w, tex->data);
-        sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGB);
+        sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGBA);
         sceGuTexFilter(GU_LINEAR, GU_LINEAR);
+        if (tex->has_palette && tex->palette) {
+            sceGuClutMode(GU_PSM_8888, 0, 0xFF, 0);
+            sceGuClutLoad(tex->palette_count / 8, tex->palette);
+        }
     } else {
         sceGuDisable(GU_TEXTURE_2D);
     }
 
-    /* Draw */
+    sceGuDisable(GU_LIGHTING);
+    sceGuDisable(GU_ALPHA_TEST);
+
+    /* Synchronize matrix stack to hardware and draw */
+    sceGumUpdateMatrix();
     sceGumDrawArray(GU_TRIANGLES, mesh->vertex_format, mesh->count, 0, mesh->vertices);
 }

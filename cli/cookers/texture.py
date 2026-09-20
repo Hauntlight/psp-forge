@@ -16,13 +16,15 @@ import os
 import struct
 from PIL import Image
 
-# PSP GPU Pixel Storage Modes (GU_PSM_*)
-PSM_8888 = 0  # 32-bit RGBA
-PSM_4444 = 1  # 16-bit RGBA (4:4:4:4)
-PSM_5551 = 2  # 16-bit RGBA (5:5:5:1)
-PSM_5650 = 3  # 16-bit RGB  (5:6:5:0)
-PSM_T4   = 4  # 4-bit indexed
-PSM_T8   = 5  # 8-bit indexed
+# PSP GPU Pixel Storage Modes (GU_PSM_* from pspgu.h)
+# IMPORTANT: These MUST match pspgu.h exactly — they are written directly into
+# the .tex header and passed verbatim to sceGuTexMode() at runtime.
+PSM_5650 = 0  # GU_PSM_5650: 16-bit RGB  (5:6:5)
+PSM_5551 = 1  # GU_PSM_5551: 16-bit RGBA (5:5:5:1)
+PSM_4444 = 2  # GU_PSM_4444: 16-bit RGBA (4:4:4:4)
+PSM_8888 = 3  # GU_PSM_8888: 32-bit RGBA
+PSM_T4   = 4  # GU_PSM_T4:   4-bit indexed
+PSM_T8   = 5  # GU_PSM_T8:   8-bit indexed
 
 FORMAT_NAMES = {
     "8888": PSM_8888,

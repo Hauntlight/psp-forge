@@ -27,8 +27,10 @@ set(PSPFORGE_SOURCES
 add_library(pspforge STATIC ${PSPFORGE_SOURCES})
 
 target_compile_options(pspforge PRIVATE
-    -O2
+    -O3
     -G0
+    -ffast-math
+    -fomit-frame-pointer
     -Wall
     -Wextra
     -Wno-unused-parameter

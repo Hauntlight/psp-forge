@@ -140,7 +140,7 @@ def cmd_cook(args):
             src_file = Path(root) / fname
             ext = src_file.suffix.lower()
 
-            if ext in [".png"]:
+            if ext in [".png", ".jpg", ".jpeg", ".bmp", ".tga"]:
                 dst_file = target_sub / f"{src_file.stem}.tex"
                 if not force and dst_file.exists() and dst_file.stat().st_mtime >= src_file.stat().st_mtime:
                     skipped_count += 1
@@ -245,15 +245,38 @@ def cmd_run(args):
     # Locate emulator
     emulator = None
     if getattr(args, "emulator", None):
-        emulator = args.emulator
+        emu_arg = Path(args.emulator).expanduser().resolve()
+        if emu_arg.is_dir():
+            # User passed a directory, look for common executable names inside
+            sub_candidates = ["ppsspp", "PPSSPP.AppImage", "PPSSPPQt", "PPSSPPSDL"]
+            for sc in sub_candidates:
+                target = emu_arg / sc
+                if target.is_file() and os.access(target, os.X_OK):
+                    emulator = str(target)
+                    break
+            if not emulator:
+                print(f"[-] Error: Directory '{args.emulator}' specified, but no executable emulator found inside.")
+                print(f"    Expected one of: {sub_candidates}")
+                sys.exit(1)
+        elif emu_arg.is_file():
+            if not os.access(emu_arg, os.X_OK):
+                print(f"[-] Error: File '{emu_arg}' is not executable. Run 'chmod +x {emu_arg}'.")
+                sys.exit(1)
+            emulator = str(emu_arg)
+        else:
+            found = shutil.which(args.emulator)
+            if found:
+                emulator = found
+            else:
+                print(f"[-] Error: Specified emulator '{args.emulator}' not found.")
+                sys.exit(1)
     else:
-        configured_emu = cfg["deploy"].get("emulator_bin", "PPSSPPQt")
-        workspace_ppsspp = Path(__file__).resolve().parents[3] / "emulators" / "ppsspp" / "ppsspp"
-        local_ppsspp = Path("/home/hauntlight/psp_game_dev/emulators/ppsspp/ppsspp")
-        candidates = [configured_emu, str(workspace_ppsspp), str(local_ppsspp), "PPSSPPQt", "PPSSPPSDL", "ppsspp"]
+        configured_emu = cfg["deploy"].get("emulator_bin", "ppsspp")
+        candidates = [configured_emu, "ppsspp", "PPSSPP.AppImage", "PPSSPPQt", "PPSSPPSDL"]
         for emu_name in candidates:
-            if os.path.isabs(emu_name) and os.path.exists(emu_name):
-                emulator = emu_name
+            cand_path = Path(emu_name).expanduser()
+            if cand_path.is_file() and os.access(cand_path, os.X_OK):
+                emulator = str(cand_path.resolve())
                 break
             found = shutil.which(emu_name)
             if found:

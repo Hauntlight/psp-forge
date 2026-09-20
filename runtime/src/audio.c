@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define AUDIO_BUFFER_SAMPLES 1024
+#define AUDIO_BUFFER_SAMPLES 512
 
 typedef struct __attribute__((packed)) {
     char     magic[4];       /* "PSND" */
@@ -37,6 +37,10 @@ static int AudioThread(SceSize args, void *argp) {
     }
 
     while (s_audio_thread_running) {
+        /* Memory barrier: ensure we see the latest values of volatile state
+         * written by the main thread (s_is_playing, s_current_sound, s_loop). */
+        __sync_synchronize();
+
         if (s_is_playing && s_current_sound && s_current_sound->pcm_data) {
             uint32_t remaining = s_current_sound->sample_count - s_playhead;
             uint32_t to_copy = (remaining < AUDIO_BUFFER_SAMPLES) ? remaining : AUDIO_BUFFER_SAMPLES;
@@ -108,23 +112,23 @@ static void ensure_audio_thread_started(void) {
 }
 
 ForgeSound* forge_sound_load(const char* path) {
-    FILE* f = forge_fopen(path, "rb");
-    if (!f) return NULL;
+    SceUID fd = forge_io_open(path);
+    if (fd < 0) return NULL;
 
     PsndHeader hdr;
-    if (fread(&hdr, sizeof(PsndHeader), 1, f) != 1) {
-        fclose(f);
+    if (sceIoRead(fd, &hdr, sizeof(PsndHeader)) != (int)sizeof(PsndHeader)) {
+        sceIoClose(fd);
         return NULL;
     }
 
     if (memcmp(hdr.magic, "PSND", 4) != 0) {
-        fclose(f);
+        sceIoClose(fd);
         return NULL;
     }
 
     ForgeSound* snd = (ForgeSound*)calloc(1, sizeof(ForgeSound));
     if (!snd) {
-        fclose(f);
+        sceIoClose(fd);
         return NULL;
     }
 
@@ -132,15 +136,15 @@ ForgeSound* forge_sound_load(const char* path) {
     snd->sample_rate  = hdr.sample_rate;
     snd->sample_count = hdr.frame_count;
 
-    snd->pcm_data = (int16_t*)memalign(64, hdr.data_size);
+    snd->pcm_data = (int16_t*)malloc(hdr.data_size);
     if (!snd->pcm_data) {
         free(snd);
-        fclose(f);
+        sceIoClose(fd);
         return NULL;
     }
 
-    fread(snd->pcm_data, hdr.data_size, 1, f);
-    fclose(f);
+    sceIoRead(fd, snd->pcm_data, hdr.data_size);
+    sceIoClose(fd);
 
     sceKernelDcacheWritebackRange(snd->pcm_data, hdr.data_size);
     return snd;

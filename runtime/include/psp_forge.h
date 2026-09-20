@@ -1,15 +1,19 @@
 #ifndef PSP_FORGE_H
 #define PSP_FORGE_H
 
+/* PSP-Forge version */
+#define FORGE_VERSION_MAJOR 1
+#define FORGE_VERSION_MINOR 1
+#define FORGE_VERSION_PATCH 0
+
 #include <stdint.h>
 #include <stdbool.h>
-#include <malloc.h>
 #include <psptypes.h>
 #include <pspkernel.h>
 #include <pspctrl.h>
 #include <pspgu.h>
 #include <pspgum.h>
-#include <stdio.h>
+#include <pspiofilemgr.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,7 +35,9 @@ void     forge_end_frame(void);
 void     forge_clear(uint32_t color_rgba8888);
 float    forge_get_delta_time(void);
 float    forge_get_fps(void);
-FILE*    forge_fopen(const char* path, const char* mode);
+SceUID   forge_io_open(const char* path);
+void     forge_set_base_path(const char* path_or_argv0);
+const char* forge_get_base_path(void);
 
 /* ========================================================================= */
 /* VRAM Static Allocator (2 MB total eDRAM)                                 */

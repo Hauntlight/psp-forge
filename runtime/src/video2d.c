@@ -18,28 +18,28 @@ typedef struct __attribute__((packed)) {
 } PtexHeader;
 
 typedef struct {
-    float   u, v;
-    int16_t x, y, z;
+    float u, v;
+    float x, y, z;
 } ForgeVertex2D;
 
 static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
-    FILE* f = forge_fopen(path, "rb");
-    if (!f) return NULL;
+    SceUID fd = forge_io_open(path);
+    if (fd < 0) return NULL;
 
     PtexHeader hdr;
-    if (fread(&hdr, sizeof(PtexHeader), 1, f) != 1) {
-        fclose(f);
+    if (sceIoRead(fd, &hdr, sizeof(PtexHeader)) != (int)sizeof(PtexHeader)) {
+        sceIoClose(fd);
         return NULL;
     }
 
     if (memcmp(hdr.magic, "PTEX", 4) != 0) {
-        fclose(f);
+        sceIoClose(fd);
         return NULL;
     }
 
     ForgeTexture* tex = (ForgeTexture*)calloc(1, sizeof(ForgeTexture));
     if (!tex) {
-        fclose(f);
+        sceIoClose(fd);
         return NULL;
     }
 
@@ -58,7 +58,7 @@ static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
         uint32_t pal_size = tex->palette_count * 4; /* RGBA8888 */
         tex->palette = malloc(pal_size);
         if (tex->palette) {
-            fread(tex->palette, pal_size, 1, f);
+            sceIoRead(fd, tex->palette, pal_size);
             sceKernelDcacheWritebackRange(tex->palette, pal_size);
         }
     }
@@ -82,26 +82,25 @@ static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
         void* vram_rel = forge_vram_alloc(pixel_bytes);
         if (vram_rel) {
             void* uncached_cpu = forge_vram_to_uncached_cpu(vram_rel);
-            fread(uncached_cpu, pixel_bytes, 1, f);
+            sceIoRead(fd, uncached_cpu, pixel_bytes);
             tex->data = vram_rel;
         } else {
-            /* Fallback to RAM if VRAM scratchpad is exhausted */
             tex->in_vram = false;
-            tex->data = memalign(16, pixel_bytes);
+            tex->data = malloc(pixel_bytes);
             if (tex->data) {
-                fread(tex->data, pixel_bytes, 1, f);
+                sceIoRead(fd, tex->data, pixel_bytes);
                 sceKernelDcacheWritebackRange(tex->data, pixel_bytes);
             }
         }
     } else {
-        tex->data = memalign(16, pixel_bytes);
+        tex->data = malloc(pixel_bytes);
         if (tex->data) {
-            fread(tex->data, pixel_bytes, 1, f);
+            sceIoRead(fd, tex->data, pixel_bytes);
             sceKernelDcacheWritebackRange(tex->data, pixel_bytes);
         }
     }
 
-    fclose(f);
+    sceIoClose(fd);
 
     if (!tex->data) {
         if (tex->palette) free(tex->palette);
@@ -141,8 +140,14 @@ void forge_draw_sprite(
     sceGuEnable(GU_TEXTURE_2D);
     sceGuTexMode(tex->format, 0, 0, tex->is_swizzled ? 1 : 0);
     sceGuTexImage(0, tex->pwr2_w, tex->pwr2_h, tex->pwr2_w, tex->data);
-    sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
+    sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGBA);
     sceGuTexFilter(GU_NEAREST, GU_NEAREST);
+
+    sceGuEnable(GU_BLEND);
+    sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
+    sceGuEnable(GU_ALPHA_TEST);
+    sceGuAlphaFunc(GU_GREATER, 0, 0xFF);
+    sceGuDisable(GU_DEPTH_TEST);
 
     if (tex->has_palette && tex->palette) {
         sceGuClutMode(GU_PSM_8888, 0, 0xFF, 0);
@@ -154,21 +159,26 @@ void forge_draw_sprite(
 
     vtx[0].u = tx;
     vtx[0].v = ty;
-    vtx[0].x = (int16_t)sx;
-    vtx[0].y = (int16_t)sy;
-    vtx[0].z = 0;
+    vtx[0].x = sx;
+    vtx[0].y = sy;
+    vtx[0].z = 0.0f;
 
     vtx[1].u = tx + tw;
     vtx[1].v = ty + th;
-    vtx[1].x = (int16_t)(sx + sw);
-    vtx[1].y = (int16_t)(sy + sh);
-    vtx[1].z = 0;
+    vtx[1].x = sx + sw;
+    vtx[1].y = sy + sh;
+    vtx[1].z = 0.0f;
 
     sceGuDrawArray(
         GU_SPRITES,
-        GU_TEXTURE_32BITF | GU_VERTEX_16BIT | GU_TRANSFORM_2D,
+        GU_TEXTURE_32BITF | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
         2,
         NULL,
         vtx
     );
+
+    /* Restore state: re-enable depth test so any subsequent 3D draw calls
+     * are not broken by the 2D state we set above. */
+    sceGuEnable(GU_DEPTH_TEST);
+    sceGuDisable(GU_TEXTURE_2D);
 }

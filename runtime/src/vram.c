@@ -38,8 +38,8 @@ void* forge_vram_get_scratchpad(void) {
 }
 
 void* forge_vram_alloc(uint32_t size) {
-    /* Align allocation to 16 bytes */
-    uint32_t aligned_size = (size + 15) & ~15;
+    /* Align to 64 bytes — PSP bus burst boundary for DMA transfers */
+    uint32_t aligned_size = (size + 63) & ~63;
 
     if (s_scratch_allocated + aligned_size > VRAM_SCRATCH_SIZE) {
         /* Out of VRAM scratchpad */

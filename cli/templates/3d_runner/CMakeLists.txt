@@ -36,6 +36,7 @@ target_link_libraries(psp_3d_runner PRIVATE
 create_pbp_file(
     TARGET psp_3d_runner
     TITLE "PSP 3D Runner"
+    BUILD_PRX
     ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon0.png"
     BACKGROUND_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets/pic1.png"
 )

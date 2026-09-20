@@ -16,6 +16,9 @@ static unsigned int __attribute__((aligned(16))) s_display_list[262144];
 static int   s_running = 1;
 static void* s_current_fbp = NULL;
 
+/* Base path for asset loading (set by forge_set_base_path or auto-detected) */
+static char s_base_path[256] = "";
+
 /* Timing & FPS stats */
 static u64   s_last_tick = 0;
 static u32   s_tick_freq = 0;
@@ -167,46 +170,179 @@ float forge_get_fps(void) {
     return s_fps;
 }
 
+
+
+static const char* find_last_char(const char* s, char c) {
+    if (!s) return NULL;
+    const char* last = NULL;
+    while (*s) {
+        if (*s == c) last = s;
+        s++;
+    }
+    return last;
+}
+
+static bool starts_with(const char* s, const char* prefix) {
+    if (!s || !prefix) return false;
+    while (*prefix) {
+        if (*s++ != *prefix++) return false;
+    }
+    return true;
+}
+
+static void string_copy(char* dest, size_t max_len, const char* src) {
+    if (!dest || max_len == 0) return;
+    size_t i = 0;
+    if (src) {
+        while (src[i] && i + 1 < max_len) {
+            dest[i] = src[i];
+            i++;
+        }
+    }
+    dest[i] = '\0';
+}
+
+void forge_set_base_path(const char* path_or_argv0) {
+    if (!path_or_argv0) return;
+    /* On PPSSPP CLI launch, argv[0] is often "umd0:/EBOOT.PBP", which is not a valid filesystem path */
+    if (starts_with(path_or_argv0, "umd0:")) return;
+    string_copy(s_base_path, sizeof(s_base_path), path_or_argv0);
+    char* slash = (char*)find_last_char(s_base_path, '/');
+    if (slash) {
+        *slash = '\0';
+    }
+    if (s_base_path[0] != '\0') {
+        sceIoChdir(s_base_path);
+    }
+}
+
+const char* forge_get_base_path(void) {
+    return s_base_path;
+}
+
+static void path_join3(char* dest, size_t max_len, const char* s1, const char* s2, const char* s3) {
+    if (!dest || max_len == 0) return;
+    dest[0] = '\0';
+    size_t cur = 0;
+    const char* parts[] = { s1, s2, s3, NULL };
+    for (int i = 0; parts[i] != NULL; ++i) {
+        const char* p = parts[i];
+        if (!p) continue;
+        while (*p && cur + 1 < max_len) {
+            dest[cur++] = *p++;
+        }
+    }
+    dest[cur] = '\0';
+}
+
+static void path_join4(char* dest, size_t max_len, const char* s1, const char* s2, const char* s3, const char* s4) {
+    if (!dest || max_len == 0) return;
+    dest[0] = '\0';
+    size_t cur = 0;
+    const char* parts[] = { s1, s2, s3, s4, NULL };
+    for (int i = 0; parts[i] != NULL; ++i) {
+        const char* p = parts[i];
+        if (!p) continue;
+        while (*p && cur + 1 < max_len) {
+            dest[cur++] = *p++;
+        }
+    }
+    dest[cur] = '\0';
+}
+
+SceUID forge_io_open(const char* path) {
+    if (!path) return -1;
+
+    /* 1. Try path as-is (handles absolute ms0:/ or disc0:/ paths) */
+    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
+    if (fd >= 0) return fd;
+
+    /* Strip "build/" development prefix */
+    const char* clean = starts_with(path, "build/") ? (path + 6) : path;
+
+    /* Extract bare filename (last path component) */
+    const char* slash = find_last_char(clean, '/');
+    const char* fname = slash ? (slash + 1) : clean;
+
+    char buf[512];
+
+    /* 2. Try relative to s_base_path (main path on real PSP and when cached).
+     *    Real PSP: ms0:/PSP/GAME/<gameid>
+     *    We try:
+     *      base_path/clean           → base/assets/hero.tex
+     *      base_path/assets/fname    → base/assets/hero.tex (shorthand)
+     */
+    if (s_base_path[0] != '\0') {
+        path_join3(buf, sizeof(buf), s_base_path, "/", clean);
+        fd = sceIoOpen(buf, PSP_O_RDONLY, 0777);
+        if (fd >= 0) return fd;
+
+        if (!starts_with(clean, "assets/")) {
+            path_join4(buf, sizeof(buf), s_base_path, "/assets/", fname, "");
+            fd = sceIoOpen(buf, PSP_O_RDONLY, 0777);
+            if (fd >= 0) return fd;
+        }
+    }
+
+    /* 3. Scan ms0:/PSP/GAME/ entries (covers PPSSPP emulator and Memory Stick).
+     *    Iterates entries and tests both original case and lowercase. */
+    {
+        SceUID dir = sceIoDopen("ms0:/PSP/GAME");
+        if (dir >= 0) {
+            SceIoDirent ent;
+            while (sceIoDread(dir, &ent) > 0) {
+                if (ent.d_name[0] == '.') continue;
+
+                /* Try exact name from directory */
+                path_join4(buf, sizeof(buf), "ms0:/PSP/GAME/", ent.d_name, "/assets/", fname);
+                fd = sceIoOpen(buf, PSP_O_RDONLY, 0777);
+                if (fd >= 0) {
+                    sceIoDclose(dir);
+                    char game_dir[256];
+                    path_join3(game_dir, sizeof(game_dir), "ms0:/PSP/GAME/", ent.d_name, "");
+                    forge_set_base_path(game_dir);
+                    return fd;
+                }
+
+                /* Try lowercase name (e.g. Linux ext4 host filesystem in PPSSPP) */
+                char lower_name[64];
+                string_copy(lower_name, sizeof(lower_name), ent.d_name);
+                for (int i = 0; lower_name[i]; ++i) {
+                    if (lower_name[i] >= 'A' && lower_name[i] <= 'Z') {
+                        lower_name[i] = (char)(lower_name[i] + ('a' - 'A'));
+                    }
+                }
+                path_join4(buf, sizeof(buf), "ms0:/PSP/GAME/", lower_name, "/assets/", fname);
+                fd = sceIoOpen(buf, PSP_O_RDONLY, 0777);
+                if (fd >= 0) {
+                    sceIoDclose(dir);
+                    char game_dir[256];
+                    path_join3(game_dir, sizeof(game_dir), "ms0:/PSP/GAME/", lower_name, "");
+                    forge_set_base_path(game_dir);
+                    return fd;
+                }
+            }
+            sceIoDclose(dir);
+        }
+    }
+
+    /* 4. UMD / disc0 support (for physical disc releases) */
+    path_join3(buf, sizeof(buf), "disc0:/PSP_GAME/USRDIR/", clean, "");
+    fd = sceIoOpen(buf, PSP_O_RDONLY, 0777);
+    if (fd >= 0) return fd;
+
+    path_join4(buf, sizeof(buf), "disc0:/PSP_GAME/USRDIR/assets/", fname, "", "");
+    fd = sceIoOpen(buf, PSP_O_RDONLY, 0777);
+    if (fd >= 0) return fd;
+
+    /* 5. Bare filename relative (last resort) */
+    fd = sceIoOpen(fname, PSP_O_RDONLY, 0777);
+    if (fd >= 0) return fd;
+
+    return -1;
+}
+
 FILE* forge_fopen(const char* path, const char* mode) {
     if (!path || !mode) return NULL;
-
-    /* 1. Try exact requested path */
-    FILE* f = fopen(path, mode);
-    if (f) return f;
-
-    char buf[256];
-
-    /* 2. PSP Device prefixes: disc0:/ (UMD/standalone EBOOT directory mount in PPSSPP) and ms0:/ */
-    if (strncmp(path, "disc0:/", 7) != 0 && strncmp(path, "ms0:/", 5) != 0) {
-        const char* clean_path = (strncmp(path, "build/", 6) == 0) ? (path + 6) : path;
-
-        snprintf(buf, sizeof(buf), "disc0:/%s", clean_path);
-        f = fopen(buf, mode);
-        if (f) return f;
-
-        const char* slash = strrchr(clean_path, '/');
-        const char* fname = slash ? (slash + 1) : clean_path;
-        snprintf(buf, sizeof(buf), "disc0:/assets/%s", fname);
-        f = fopen(buf, mode);
-        if (f) return f;
-
-        snprintf(buf, sizeof(buf), "ms0:/%s", clean_path);
-        f = fopen(buf, mode);
-        if (f) return f;
-    }
-
-    /* 3. If path starts with "build/", try stripping "build/" */
-    if (strncmp(path, "build/", 6) == 0) {
-        f = fopen(path + 6, mode);
-        if (f) return f;
-    }
-
-    /* 4. If path starts with "assets/", try prepending "build/" */
-    if (strncmp(path, "assets/", 7) == 0) {
-        snprintf(buf, sizeof(buf), "build/%s", path);
-        f = fopen(buf, mode);
-        if (f) return f;
-    }
-
-    return NULL;
+    return fopen(path, mode);
 }

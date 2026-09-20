@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # PSP-Forge CLI Launcher
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
+# Resolve real target even when called via symlink (e.g. /usr/local/bin/psp-forge)
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
 
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
 exec python3 -m cli.psp_forge "$@"
