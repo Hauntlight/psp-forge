@@ -95,7 +95,18 @@ int main(int argc, char* argv[]) {
             state = STATE_JUMP;
         }
 
-        /* 5. Physics Update (Jump & Gravity) */
+        /* 5. Reset on START */
+        if (forge_input_is_pressed(&in, PSP_CTRL_START)) {
+            char_x = 0.0f;
+            char_y = 0.0f;
+            char_z = 0.0f;
+            vel_y  = 0.0f;
+            facing_angle = 0.0f;
+            target_angle = 0.0f;
+            cam_angle = 0.52f;
+        }
+
+        /* 6. Physics Update (Jump & Gravity) */
         if (char_y > 0.0f || vel_y > 0.0f) {
             char_y += vel_y * dt;
             vel_y  -= 16.0f * dt;
@@ -110,13 +121,22 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        /* 6. Locomotion Movement relative to Camera Angle */
+        /* 7. Locomotion Movement relative to Camera Angle */
         if (input_mag > 0.0f) {
             float sin_cam = sinf(cam_angle);
             float cos_cam = cosf(cam_angle);
 
-            float move_x = ( input_x * cos_cam + input_y * sin_cam);
-            float move_z = (-input_x * sin_cam + input_y * cos_cam);
+            /* Camera-relative movement vectors:
+             * On PSP: input_y is -1.0 for UP (forward), +1.0 for DOWN (backward).
+             *         input_x is +1.0 for RIGHT, -1.0 for LEFT.
+             * Camera forward vector: (-sin_cam,  cos_cam)
+             * Camera right vector:   ( cos_cam,  sin_cam)
+             *
+             * stick_forward = -input_y; stick_right = input_x;
+             * move = stick_right * cam_right + stick_forward * cam_forward
+             */
+            float move_x = (input_x * cos_cam + input_y * sin_cam);
+            float move_z = (input_x * sin_cam - input_y * cos_cam);
 
             float move_speed = 3.8f;
             char_x += move_x * move_speed * dt;
@@ -124,9 +144,9 @@ int main(int argc, char* argv[]) {
 
             /* Clamping inside Arena radius */
             float dist_from_center = sqrtf(char_x * char_x + char_z * char_z);
-            if (dist_from_center > 6.2f) {
-                char_x = (char_x / dist_from_center) * 6.2f;
-                char_z = (char_z / dist_from_center) * 6.2f;
+            if (dist_from_center > 4.1f) {
+                char_x = (char_x / dist_from_center) * 4.1f;
+                char_z = (char_z / dist_from_center) * 4.1f;
             }
 
             /* Smooth facing angle interpolation */
