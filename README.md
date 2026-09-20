@@ -2,12 +2,7 @@
 
 # PSP-FORGE ⚔️
 
-[![Platform](https://img.shields.io/badge/Platform-Sony%20PSP-003791?style=for-the-badge&logo=playstation&logoColor=white)](https://pspdev.github.io/)
-[![Architecture](https://img.shields.io/badge/Arch-MIPS%20Allegrex-FF6600?style=for-the-badge&logo=cpu&logoColor=white)](https://pspdev.github.io/vfpu-docs/)
-[![Standard](https://img.shields.io/badge/C%20Standard-C99-00599C?style=for-the-badge&logo=c&logoColor=white)](https://en.wikipedia.org/wiki/C99)
-[![Built With](https://img.shields.io/badge/Built%20With-PSPDEV%20Toolchain-008080?style=for-the-badge)](https://github.com/pspdev)
-[![Dev Style](https://img.shields.io/badge/Crafted%20Via-100%25%20Vibe--Coded-ff69b4?style=for-the-badge&logo=openai&logoColor=white)](#-100-vibe-coded-origins)
-[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Sony%20PSP-003791?logo=playstation&logoColor=white)](https://pspdev.github.io/) [![Arch](https://img.shields.io/badge/Arch-MIPS%20Allegrex-FF6600?logo=cpu&logoColor=white)](https://pspdev.github.io/vfpu-docs/) [![C Standard](https://img.shields.io/badge/C%20Standard-C99-00599C?logo=c&logoColor=white)](https://en.wikipedia.org/wiki/C99) [![Toolchain](https://img.shields.io/badge/Toolchain-PSPDEV-008080)](https://github.com/pspdev) [![Vibe Coded](https://img.shields.io/badge/Crafted-100%25%20Vibe--Coded-ff69b4?logo=openai&logoColor=white)](#-100-vibe-coded-origins) [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 **A Unified Developer Suite & High-Performance C99 Micro-Engine for Sony PlayStation Portable® (PSP)**
 
