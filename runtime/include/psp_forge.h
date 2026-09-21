@@ -43,6 +43,9 @@ const char* forge_get_base_path(void);
 /* VRAM Static Allocator (2 MB total eDRAM)                                 */
 /* ========================================================================= */
 
+void*    forge_vram_get_draw_buffer(void);
+void*    forge_vram_get_disp_buffer(void);
+void*    forge_vram_get_depth_buffer(void);
 void*    forge_vram_get_scratchpad(void);
 void*    forge_vram_alloc(uint32_t size);
 void     forge_vram_reset(void);

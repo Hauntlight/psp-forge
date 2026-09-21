@@ -4,18 +4,24 @@
 /* ========================================================================= */
 /* VRAM Layout (2048 KB eDRAM)                                               */
 /* ========================================================================= */
-/* 0x00000000 - 0x00080000 (512 KB): Draw Buffer   (RGBA8888, 512x272)      */
-/* 0x00080000 - 0x00100000 (512 KB): Disp Buffer   (RGBA8888, 512x272)      */
-/* 0x00100000 - 0x00140000 (256 KB): Depth Buffer  (16-bit Z, 512x272)      */
-/* 0x00140000 - 0x00200000 (768 KB): Texture Scratchpad                     */
+/* Exact pitch/height calculation with FORGE_BUF_WIDTH = 512, HEIGHT = 272:  */
+/* 0x00000000 - 0x00088000 (544 KiB): Draw Buffer   (RGBA8888, 512x272)      */
+/* 0x00088000 - 0x00110000 (544 KiB): Disp Buffer   (RGBA8888, 512x272)      */
+/* 0x00110000 - 0x00154000 (272 KiB): Depth Buffer  (16-bit Z,  512x272)      */
+/* 0x00154000 - 0x00200000 (688 KiB): Texture Scratchpad                     */
 /* ========================================================================= */
 
+#define VRAM_DRAW_SIZE     (FORGE_BUF_WIDTH * FORGE_SCREEN_HEIGHT * 4) /* 557056 B = 544 KiB */
+#define VRAM_DISP_SIZE     (FORGE_BUF_WIDTH * FORGE_SCREEN_HEIGHT * 4) /* 557056 B = 544 KiB */
+#define VRAM_DEPTH_SIZE    (FORGE_BUF_WIDTH * FORGE_SCREEN_HEIGHT * 2) /* 278528 B = 272 KiB */
+
 #define VRAM_DRAW_OFFSET   ((void*)0x00000000)
-#define VRAM_DISP_OFFSET   ((void*)0x00080000)
-#define VRAM_DEPTH_OFFSET  ((void*)0x00100000)
-#define VRAM_SCRATCH_START ((void*)0x00140000)
+#define VRAM_DISP_OFFSET   ((void*)((uintptr_t)VRAM_DRAW_OFFSET + VRAM_DRAW_SIZE))   /* 0x00088000 */
+#define VRAM_DEPTH_OFFSET  ((void*)((uintptr_t)VRAM_DISP_OFFSET + VRAM_DISP_SIZE))   /* 0x00110000 */
+#define VRAM_SCRATCH_START ((void*)((uintptr_t)VRAM_DEPTH_OFFSET + VRAM_DEPTH_SIZE)) /* 0x00154000 */
+
 #define VRAM_TOTAL_SIZE    (2 * 1024 * 1024)
-#define VRAM_SCRATCH_SIZE  (VRAM_TOTAL_SIZE - 0x00140000) /* 768 KB */
+#define VRAM_SCRATCH_SIZE  (VRAM_TOTAL_SIZE - (uint32_t)(uintptr_t)VRAM_SCRATCH_START) /* 704512 B = 688 KiB */
 
 #define VRAM_CPU_UNCACHED_BASE ((uintptr_t)0x44000000)
 
