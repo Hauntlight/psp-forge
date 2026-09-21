@@ -80,7 +80,7 @@ def cook_audio(
     elif ext == ".wav":
         wav_file_to_read = input_path
     else:
-        raise ValueError(f"Unsupported audio extension '{ext}'. Use .wav, .mp3, or .ogg.")
+        raise ValueError(f"Unsupported audio extension '{ext}'. Use .wav, .mp3, .ogg, .flac, or .m4a.")
 
     try:
         with wave.open(wav_file_to_read, "rb") as wf:

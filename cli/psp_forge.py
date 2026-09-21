@@ -158,7 +158,7 @@ def cmd_cook(args):
                 cook_mesh(str(src_file), str(dst_file))
                 cooked_count += 1
 
-            elif ext in [".wav", ".mp3", ".ogg"]:
+            elif ext in [".wav", ".mp3", ".ogg", ".flac", ".m4a"]:
                 dst_file = target_sub / f"{src_file.stem}.snd"
                 if not force and dst_file.exists() and dst_file.stat().st_mtime >= src_file.stat().st_mtime:
                     skipped_count += 1
@@ -172,6 +172,9 @@ def cmd_cook(args):
 
 def cmd_build(args):
     """Compiles the PSP project and creates EBOOT.PBP."""
+    if getattr(args, "clean", False):
+        cmd_clean(args)
+
     # Ensure assets are cooked first
     cmd_cook(args)
 
@@ -333,6 +336,8 @@ def main():
 
     # build
     p_build = subparsers.add_parser("build", help="Compile C source and package EBOOT.PBP")
+    p_build.add_argument("--clean", action="store_true", help="Remove build directory before compiling")
+    p_build.add_argument("--release", action="store_true", help="Build with optimizations (default)")
     p_build.add_argument("--debug", action="store_true", help="Build with debug symbols")
     p_build.add_argument("--docker", action="store_true", help="Build inside official PSPDEV Docker container")
     p_build.add_argument("--force", action="store_true", help="Force rebuild of cooked assets")
