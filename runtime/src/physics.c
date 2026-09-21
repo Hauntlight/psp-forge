@@ -84,13 +84,20 @@ ForgeAABB forge_mesh_get_transformed_aabb(
         return box;
     }
 
-    box.min.x = x + mesh->aabb_min[0] * sx;
-    box.min.y = y + mesh->aabb_min[1] * sy;
-    box.min.z = z + mesh->aabb_min[2] * sz;
+    float tx1 = mesh->aabb_min[0] * sx;
+    float tx2 = mesh->aabb_max[0] * sx;
+    box.min.x = x + (tx1 < tx2 ? tx1 : tx2);
+    box.max.x = x + (tx1 > tx2 ? tx1 : tx2);
 
-    box.max.x = x + mesh->aabb_max[0] * sx;
-    box.max.y = y + mesh->aabb_max[1] * sy;
-    box.max.z = z + mesh->aabb_max[2] * sz;
+    float ty1 = mesh->aabb_min[1] * sy;
+    float ty2 = mesh->aabb_max[1] * sy;
+    box.min.y = y + (ty1 < ty2 ? ty1 : ty2);
+    box.max.y = y + (ty1 > ty2 ? ty1 : ty2);
+
+    float tz1 = mesh->aabb_min[2] * sz;
+    float tz2 = mesh->aabb_max[2] * sz;
+    box.min.z = z + (tz1 < tz2 ? tz1 : tz2);
+    box.max.z = z + (tz1 > tz2 ? tz1 : tz2);
 
     return box;
 }
