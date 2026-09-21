@@ -30,8 +30,6 @@ target_link_libraries(psp_2d_game PRIVATE
     pspctrl
     psprtc
     pspfpu
-    pspdebug
-    pspkernel
     m
 )
 

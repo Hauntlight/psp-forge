@@ -74,7 +74,7 @@ target_compile_options(psp_2d_game PRIVATE
 target_link_libraries(psp_2d_game PRIVATE
     pspforge
     pspgum pspgu pspge
-    pspaudio pspdisplay pspctrl psprtc pspfpu pspdebug pspkernel m
+    pspaudio pspdisplay pspctrl psprtc pspfpu m
 )
 
 # Crucial: BUILD_PRX ensures compatibility with both PPSSPP and real hardware

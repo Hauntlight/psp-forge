@@ -93,7 +93,7 @@ target_compile_options(psp_3d_runner PRIVATE
 target_link_libraries(psp_3d_runner PRIVATE
     pspforge
     pspgum pspgu pspge
-    pspaudio pspdisplay pspctrl psprtc pspfpu pspdebug pspkernel m
+    pspaudio pspdisplay pspctrl psprtc pspfpu m
 )
 
 create_pbp_file(

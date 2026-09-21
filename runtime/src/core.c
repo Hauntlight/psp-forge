@@ -3,7 +3,6 @@
 #include <pspdisplay.h>
 #include <psprtc.h>
 #include <pspfpu.h>
-#include <pspdebug.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -55,7 +54,9 @@ static void setup_callbacks(void) {
 }
 
 void forge_debug_install_error_handler(void) {
-    pspDebugInstallErrorHandler(NULL);
+    /* User-mode applications cannot register kernel exception handlers without
+     * pulling in ExceptionManagerForKernel, which causes error 8002013C on CFW.
+     * Kept as safe no-op for API compatibility. */
 }
 
 /* ========================================================================= */
