@@ -62,7 +62,8 @@ def cmd_init(args):
         sys.exit(1)
 
     print(f"[+] Creating PSP project '{project_name}' with template '{template_type}'...")
-    shutil.copytree(src_template, target_dir, dirs_exist_ok=True)
+    ignore_func = shutil.ignore_patterns("build", ".git*", "*.o", "*.a", "*.prx", "*.elf", "*.PBP")
+    shutil.copytree(src_template, target_dir, ignore=ignore_func, dirs_exist_ok=True)
 
     # Customize psp.toml
     config_file = target_dir / "psp.toml"
@@ -343,7 +344,7 @@ def main():
     p_build.add_argument("--clean", action="store_true", help="Remove build directory before compiling")
     p_build.add_argument("--release", action="store_true", help="Build with optimizations (default)")
     p_build.add_argument("--debug", action="store_true", help="Build with debug symbols")
-    p_build.add_argument("--error-handler", action="store_true", help="Enable hardware blue-screen error handler on crash")
+    p_build.add_argument("--error-handler", action="store_true", help="Compatibility flag (handled safely in user mode without kernel stubs)")
     p_build.add_argument("--docker", action="store_true", help="Build inside official PSPDEV Docker container")
     p_build.add_argument("--force", action="store_true", help="Force rebuild of cooked assets")
 

@@ -245,8 +245,17 @@ psp-forge run
 
 ## 🎮 Real Hardware Deployment
 
-Every PSP-Forge project compiles with the `BUILD_PRX` directive enabled, ensuring seamless operation on both PPSSPP and physical PSP hardware running Custom Firmware (CFW):
+Every PSP-Forge project compiles with the `BUILD_PRX` directive enabled, ensuring seamless operation on both PPSSPP and physical PSP hardware (tested and verified on Sony PSP-3004 running 6.61 PRO-C Custom Firmware):
 
+### Built-in Hardware Stability Defaults
+* **Pure User-Mode Linking**: Links only against user-mode stubs (`libpspuser.a`), avoiding `*ForKernel` references that trigger `8002013C` or boot freezes on CFW.
+* **Safe HOME/PS Button Teardown**: Asynchronous exit callback sets `s_running = 0`, allowing the main thread loop to cleanly shut down display lists, audio DMA, and release VRAM before calling `sceKernelExitGame()`.
+* **FPU Trap Masking**: Calls `pspfpuSetEnable(0)` on startup to prevent Allegrex floating-point exceptions from crashing the hardware.
+* **Dynamic RAM Sizing**: Relies on Newlib's `_sbrk.c` dynamic heap allocation, avoiding hardcoded `PSP_HEAP_SIZE_KB` allocation failures.
+* **16-Byte DMA Alignment**: All textures, display lists, and vertices use `memalign(16, size)` to prevent GPU bus error lockups.
+* **Non-Blocking Input**: Uses `sceCtrlPeekBufferPositive` to guarantee zero frame-loop hitching.
+
+### Installation to Memory Stick
 1. Connect your PSP via USB or insert your Memory Stick Duo into your computer.
 2. Copy the project folder containing `EBOOT.PBP` and its `assets/` directory to:
    ```text
