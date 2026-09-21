@@ -64,6 +64,44 @@ class TestTextureCooker(unittest.TestCase):
                 self.assertEqual(has_pal, 1)
                 self.assertEqual(pal_cnt, 256)
 
+    def test_cook_clut8_preserves_alpha(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src_png = os.path.join(tmpdir, "clut_alpha.png")
+            out_tex = os.path.join(tmpdir, "clut_alpha.tex")
+
+            # Image with transparent and opaque regions
+            img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+            img.putpixel((0, 0), (255, 0, 0, 255))
+            img.save(src_png)
+
+            cook_texture(src_png, out_tex, format_type="t8", swizzle=False)
+            with open(out_tex, "rb") as f:
+                f.seek(32) # Skip 32-byte header
+                pal_data = f.read(256 * 4) # 256 RGBA8888 entries
+
+            alphas = [pal_data[i * 4 + 3] for i in range(256)]
+            self.assertIn(0, alphas, "CLUT8 palette must preserve transparent alpha (0)")
+            self.assertIn(255, alphas, "CLUT8 palette must preserve opaque alpha (255)")
+
+    def test_cook_clut4_preserves_alpha(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src_png = os.path.join(tmpdir, "clut4_alpha.png")
+            out_tex = os.path.join(tmpdir, "clut4_alpha.tex")
+
+            # Image with transparent and opaque regions
+            img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+            img.putpixel((0, 0), (0, 255, 0, 255))
+            img.save(src_png)
+
+            cook_texture(src_png, out_tex, format_type="t4", swizzle=False)
+            with open(out_tex, "rb") as f:
+                f.seek(32) # Skip 32-byte header
+                pal_data = f.read(16 * 4) # 16 RGBA8888 entries
+
+            alphas = [pal_data[i * 4 + 3] for i in range(16)]
+            self.assertIn(0, alphas, "CLUT4 palette must preserve transparent alpha (0)")
+            self.assertIn(255, alphas, "CLUT4 palette must preserve opaque alpha (255)")
+
 
 if __name__ == "__main__":
     unittest.main()

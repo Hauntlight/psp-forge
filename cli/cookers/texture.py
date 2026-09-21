@@ -220,18 +220,35 @@ def cook_texture(
         pal = quantized.getpalette()  # RGB list
         has_palette = 1
         palette_count = 256
+
+        raw_indices = quantized.tobytes()
+
+        # Compute per-palette-index alpha from original image if RGBA
+        if "A" in padded_img.getbands():
+            a_bytes = padded_img.getchannel("A").tobytes()
+            alpha_accum = [0] * 256
+            alpha_counts = [0] * 256
+            for a, idx in zip(a_bytes, raw_indices):
+                alpha_accum[idx] += a
+                alpha_counts[idx] += 1
+            pal_alpha = [
+                int(round(alpha_accum[i] / alpha_counts[i])) if alpha_counts[i] > 0 else 255
+                for i in range(256)
+            ]
+        else:
+            pal_alpha = [255] * 256
+
         # Generate RGBA8888 palette entries
         pal_buf = bytearray()
         for i in range(256):
             if i * 3 + 2 < len(pal):
                 pr, pg, pb = pal[i * 3], pal[i * 3 + 1], pal[i * 3 + 2]
-                pa = 255
+                pa = pal_alpha[i]
             else:
                 pr, pg, pb, pa = 0, 0, 0, 0
             pal_buf.extend(struct.pack("<BBBB", pr, pg, pb, pa))
         palette_bytes = bytes(pal_buf)
 
-        raw_indices = quantized.tobytes()
         bpp = 1
         if swizzle:
             pixel_data = swizzle_linear_data(raw_indices, pwr2_w, pwr2_h, bpp)
@@ -244,11 +261,29 @@ def cook_texture(
         pal = quantized.getpalette()
         has_palette = 1
         palette_count = 16
+
+        indices = quantized.tobytes()
+
+        # Compute per-palette-index alpha from original image if RGBA
+        if "A" in padded_img.getbands():
+            a_bytes = padded_img.getchannel("A").tobytes()
+            alpha_accum = [0] * 16
+            alpha_counts = [0] * 16
+            for a, idx in zip(a_bytes, indices):
+                alpha_accum[idx] += a
+                alpha_counts[idx] += 1
+            pal_alpha = [
+                int(round(alpha_accum[i] / alpha_counts[i])) if alpha_counts[i] > 0 else 255
+                for i in range(16)
+            ]
+        else:
+            pal_alpha = [255] * 16
+
         pal_buf = bytearray()
         for i in range(16):
             if i * 3 + 2 < len(pal):
                 pr, pg, pb = pal[i * 3], pal[i * 3 + 1], pal[i * 3 + 2]
-                pa = 255
+                pa = pal_alpha[i]
             else:
                 pr, pg, pb, pa = 0, 0, 0, 0
             pal_buf.extend(struct.pack("<BBBB", pr, pg, pb, pa))
