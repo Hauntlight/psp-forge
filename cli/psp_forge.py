@@ -95,7 +95,7 @@ def cmd_init(args):
                 ],
                 "compilerPath": f"{pspdev}/bin/psp-gcc",
                 "cStandard": "c99",
-                "intelliSenseMode": "linux-gcc-arm"
+                "intelliSenseMode": "linux-gcc-x86"
             }
         ],
         "version": 4
