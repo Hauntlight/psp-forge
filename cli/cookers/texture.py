@@ -147,7 +147,7 @@ def cook_texture(
     vram_bytes = pwr2_w * pwr2_h * bpp
     if vram_bytes > 512 * 1024:
         print(f"  [!] WARNING (PSP VRAM): Texture '{os.path.basename(input_path)}' padded to {pwr2_w}x{pwr2_h} ({vram_bytes / 1024:.0f} KB in {format_type}).")
-        print(f"      Fast eDRAM texture scratchpad is only ~656 KB. Consider using RGBA5551/5650 (16-bit) or indexed CLUT8.")
+        print(f"      Fast eDRAM texture scratchpad is only 688 KiB. Consider using RGBA5551/5650 (16-bit) or indexed CLUT8.")
 
     # Pad image to power of two
     padded_img = Image.new("RGBA", (pwr2_w, pwr2_h), (0, 0, 0, 0))

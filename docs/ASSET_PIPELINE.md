@@ -12,7 +12,7 @@ The **PSP-Forge** suite includes the asset compiler (`psp-forge cook`) to automa
 |---|---|---|---|
 | `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tga` | **`.tex`** (PSP Texture) | `cli/cookers/texture.py` | $16 \times 8$ byte block swizzling, POT Padding ($2^n \le 512$), hardware PSM alignment |
 | Wavefront `.obj` | **`.p3d`** (PSP 3D Mesh) | `cli/cookers/mesh.py` | Normals, flipped V UVs, triangulation, AABB Bounding Box, 16-byte DMA alignment |
-| `.wav`, `.mp3`, `.ogg`, `.flac` | **`.snd`** (PSP Sound) | `cli/cookers/audio.py` | Linear resampling to 44.1kHz, PCM S16-LE, alignment to 64-sample multiples |
+| `.wav`, `.mp3`, `.ogg`, `.flac`, `.m4a` | **`.snd`** (PSP Sound) | `cli/cookers/audio.py` | Linear resampling to 44.1kHz, PCM S16-LE, alignment to 64-sample multiples |
 
 ---
 
@@ -29,6 +29,8 @@ In standard linear images, pixels are stored row by row from left to right. When
    - `5551` / `rgba5551` (`GU_PSM_5551 = 1`): 16-bit RGBA (1-bit alpha on/off).
    - `4444` / `rgba4444` (`GU_PSM_4444 = 2`): 16-bit RGBA (16 levels of alpha).
    - `5650` / `rgb5650`  (`GU_PSM_5650 = 0`): 16-bit RGB with no alpha (ideal for skyboxes and backgrounds).
+   - `clut8` (`GU_PSM_T8 = 5`): 8-bit indexed palette (256 RGBA colors) with full alpha preservation.
+   - `clut4` (`GU_PSM_T4 = 4`): 4-bit indexed palette (16 RGBA colors) with full alpha preservation.
 
 ### Command-Line Usage:
 ```bash

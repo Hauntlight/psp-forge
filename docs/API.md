@@ -11,7 +11,7 @@ Initializes the Graphics Utility (GU), audio subsystem, system callbacks for the
 * **Parameters:** `flags` reserved (pass `0`).
 
 ### `void forge_shutdown(void)`
-Shuts down the display pipeline and frees allocated runtime resources.
+Shuts down the display pipeline, cleanly terminates the background audio thread and hardware channels (`forge_audio_shutdown`), resets the active scene (`forge_scene_reset`), and resets VRAM scratchpad allocators.
 
 ### `int forge_is_running(void)`
 Returns `1` if the application is running, or `0` if the user requested exit via the PSP HOME button.
@@ -36,14 +36,26 @@ Returns the current average frames per second.
 
 ## 2. Static VRAM Allocator (2 MB eDRAM)
 
-The 2 MB on-chip VRAM is partitioned deterministically:
-* `0x00000000` - `0x00080000` (512 KB): Draw Buffer
-* `0x00080000` - `0x00100000` (512 KB): Display Buffer
-* `0x00100000` - `0x00140000` (256 KB): Depth Buffer (16-bit Z)
-* `0x00140000` - `0x00200000` (768 KB): Ultra-fast Texture Scratchpad
+The 2 MB on-chip VRAM is partitioned deterministically without buffer overlap (stride pitch: 512, height: 272):
+* `0x00000000` - `0x00088000` (544 KiB): Draw Buffer (RGBA8888)
+* `0x00088000` - `0x00110000` (544 KiB): Display Buffer (RGBA8888)
+* `0x00110000` - `0x00154000` (272 KiB): Depth Buffer (16-bit Z)
+* `0x00154000` - `0x00200000` (688 KiB): Ultra-fast Texture Scratchpad
+
+### `void* forge_vram_get_draw_buffer(void)`
+Returns the relative VRAM pointer to the active 544 KiB draw buffer.
+
+### `void* forge_vram_get_disp_buffer(void)`
+Returns the relative VRAM pointer to the active 544 KiB display buffer.
+
+### `void* forge_vram_get_depth_buffer(void)`
+Returns the relative VRAM pointer to the active 272 KiB 16-bit depth buffer.
+
+### `void* forge_vram_get_scratchpad(void)`
+Returns the current allocation pointer inside the 688 KiB texture scratchpad.
 
 ### `void* forge_vram_alloc(uint32_t size)`
-Allocates 16-byte aligned linear memory in the VRAM scratchpad. Returns a relative GPU offset, or `NULL` if VRAM scratchpad space is exhausted.
+Allocates 64-byte aligned linear memory in the VRAM scratchpad. Returns a relative GPU offset, or `NULL` if VRAM scratchpad space is exhausted.
 
 ### `void forge_vram_reset(void)`
 Resets the scratchpad allocation pointer (enabling VRAM memory recycling between scenes or levels).
@@ -109,10 +121,10 @@ Sets up view and perspective projection matrices with a $16:9$ aspect ratio.
 Registers a virtual scene light (up to 16 simultaneous lights supported). Nearest 4 lights are dynamically sorted and mapped to hardware registers `GU_LIGHT0..3` via `forge_cull_and_apply_lights()`.
 
 ### `void forge_draw_mesh(const ForgeMesh* mesh, const ForgeTexture* tex, float x, float y, float z, float rx, float ry, float rz, float sx, float sy, float sz)`
-Applies model transformations (translation, rotation, scale), performs light culling and binding for the 4 nearest lights, and renders mesh primitives. Note: `forge_draw_mesh_current()` renders textures using `GU_TFX_REPLACE` (unlit mode) to guarantee maximum fillrate at 60 FPS.
+Applies model transformations (translation, rotation, scale), performs light culling and binding for the 4 nearest lights, and renders mesh primitives. Note: `forge_draw_mesh_current()` dynamically uses `GU_TFX_MODULATE` with hardware lighting when lights are registered, or `GU_TFX_REPLACE` (unlit mode) when no lights are active for maximum fillrate.
 
 ### `void forge_draw_mesh_current(const ForgeMesh* mesh, const ForgeTexture* tex)`
-Renders a mesh using the current transformation matrix on the active `GU_MODEL` Gum stack without modifying or resetting it. Ideal for custom hierarchical matrix operations.
+Renders a mesh using the current transformation matrix on the active `GU_MODEL` Gum stack without modifying or resetting it. Ideal for custom hierarchical matrix operations. Automatically handles lighting modulation when scene lights are present.
 
 ### `void forge_draw_mesh_node(const ForgeMesh* mesh, const ForgeTexture* tex, float x, float y, float z, float rx, float ry, float rz, float sx, float sy, float sz)`
 Convenience helper for hierarchical articulated rigs: pushes a matrix onto the `pspgum` stack (`sceGumPushMatrix()`), applies relative translation, rotation, and scale, draws the mesh via `forge_draw_mesh_current`, and pops the matrix (`sceGumPopMatrix()`).
@@ -132,6 +144,9 @@ Dispatches audio playback to the dedicated high-priority thread (`0x12`), which 
 
 ### `void forge_sound_stop(void)`
 Stops active audio playback.
+
+### `void forge_audio_shutdown(void)`
+Stops audio playback, signals the background audio thread to terminate, waits for thread exit (`sceKernelWaitThreadEnd`), deletes thread resources, and releases the hardware audio channel (`sceAudioChRelease`). Automatically invoked by `forge_shutdown()`.
 
 ---
 
@@ -199,3 +214,4 @@ struct ForgeScene {
 * `void forge_scene_set(ForgeScene* scene);`: Schedules a transition to a new scene (executed at the start of the next frame).
 * `ForgeScene* forge_scene_get_current(void);`: Returns pointer to active scene.
 * `void forge_scene_update_and_draw(float dt);`: Executes update and draw sequence for active scene.
+* `void forge_scene_reset(void);`: Destroys active scene (invoking its `on_destroy` callback if registered) and resets scene state. Automatically invoked by `forge_shutdown()`.

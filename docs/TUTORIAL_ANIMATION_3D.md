@@ -1,6 +1,6 @@
 # Tutorial: Procedural & Hierarchical 3D Animation 💎⚔️
 
-This tutorial explains how to implement 3D animations on the Sony PSP leveraging the hardware matrix stack (`pspgum`), procedural kinematics, and high-performance mathematics—guaranteeing 60 FPS without overloading the 333 MHz MIPS CPU.
+This tutorial explains how to implement 3D animations on the Sony PSP leveraging the hardware matrix stack (`pspgum`), procedural kinematics, and high-performance mathematics—targeting smooth 60 FPS without overloading the 333 MHz MIPS CPU.
 
 Two complete showcase demos are included in PSP-Forge:
 1. **Procedural Floating Gem**: `demos/demo_anim_3d/` (Harmonic oscillations, tilt, and continuous rotation)
@@ -94,7 +94,7 @@ To allow limbs to rotate naturally around joints (shoulders, elbows, hips, knees
 - `knight_bot.png` ($256 \times 256$, 256 KB): UV atlas for armor, visor, and sword.
 - `arena.png` ($128 \times 128$, 64 KB): Radial stone pattern with glowing cyan circuit runes.
 - `shadow.png` ($32 \times 32$, 4 KB): Soft radial alpha vignette.
-Total texture memory: ~324 KB, staying comfortably inside the 512 KB eDRAM texture scratchpad!
+Total texture memory: ~324 KB, staying comfortably inside the 688 KiB eDRAM texture scratchpad!
 
 ---
 

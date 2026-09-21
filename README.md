@@ -6,7 +6,7 @@
 
 [![Platform](https://img.shields.io/badge/Platform-Sony%20PSP-003791?logo=playstation&logoColor=white)](https://pspdev.github.io/) [![Arch](https://img.shields.io/badge/Arch-MIPS%20Allegrex-FF6600?logo=cpu&logoColor=white)](https://pspdev.github.io/vfpu-docs/) [![C Standard](https://img.shields.io/badge/C%20Standard-C99-00599C?logo=c&logoColor=white)](https://en.wikipedia.org/wiki/C99) [![Toolchain](https://img.shields.io/badge/Toolchain-PSPDEV-008080)](https://github.com/pspdev) [![Vibe Coded](https://img.shields.io/badge/Crafted-100%25%20Vibe--Coded-ff69b4?logo=openai&logoColor=white)](#-100-vibe-coded-origins) [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-*An All-in-One "Swiss Army Knife" & Micro-Engine for Homebrew Developers • Streamlined CLI • Asset Cooker • 60 FPS Guaranteed*
+*An All-in-One "Swiss Army Knife" & Micro-Engine for Homebrew Developers • Streamlined CLI • Asset Cooker • Designed for 60 FPS Workloads*
 
 [Get Started](docs/INSTALLATION.md) • [Documentation](docs/) • [Tutorials](#-tutorials--guides) • [Demos](#-showcase-demos) • [Architecture](#-architecture--key-features) • [Thanks](#-thanks--acknowledgments)
 
@@ -104,7 +104,7 @@ The PSP hardware imposes strict memory and rasterizer constraints. The Asset Coo
   * ⚠️ Warns if uncompressed audio clips exceed 2 MB RAM.
 
 ### 3. C99 Micro-Engine (`libpspforge`)
-* **Zero Per-Frame Dynamic Allocation**: Zero allocations during the 60 FPS game loop. The 2 MB on-chip eDRAM is deterministically partitioned: Draw buffer ($512\text{ KB}$), Display buffer ($512\text{ KB}$), 16-bit Depth buffer ($256\text{ KB}$), and Texture scratchpad ($768\text{ KB}$). Dynamic allocations (`malloc`, `free`) are strictly confined to asset loading during scene transitions.
+* **Zero Per-Frame Dynamic Allocation**: Zero allocations during the 60 FPS game loop. The 2 MB on-chip eDRAM is deterministically partitioned: Draw buffer ($544\text{ KiB}$), Display buffer ($544\text{ KiB}$), 16-bit Depth buffer ($272\text{ KiB}$), and Texture scratchpad ($688\text{ KiB}$). Dynamic allocations (`malloc`, `free`) are strictly confined to asset loading during scene transitions.
 * **Display List Management**: Safe 16-byte aligned GU Display Lists with automatic D-Cache writeback (`sceKernelDcacheWritebackRange`).
 * **2D & 3D Pipelines**: Fast 2D sprite batching (`GU_SPRITES`), perspective projection, camera view matrix, articulated hierarchical node transforms (`forge_draw_mesh_node`), and distance-based virtual light culling.
 * **Collision Engine**: Lightweight, allocation-free 2D primitives (`ForgeRect`, `ForgeCircle`) and 3D bounding volumes (`ForgeAABB`, `ForgeSphere`) with analytical intersection tests.
@@ -297,7 +297,7 @@ type: homebrew-game-development-suite-and-c99-micro-engine
 target_hardware: Sony PlayStation Portable (MIPS Allegrex R4000 @ 333MHz, 24MB RAM, 2MB eDRAM)
 programming_languages: [C99, Python 3.11, CMake]
 architecture_features:
-  - Zero per-frame allocations with static 2MB VRAM layout (512K Draw, 512K Disp, 256K Depth, 768K Scratchpad)
+  - Zero per-frame allocations with static 2MB VRAM layout (544K Draw, 544K Disp, 272K Depth, 688K Scratchpad)
   - 16x8 block texture swizzling to prevent GE cache line stalls
   - Power-of-two texture padding up to 512x512 with CLUT4/CLUT8 quantization
   - Compact .p3d vertex streaming with precomputed AABB bounds
