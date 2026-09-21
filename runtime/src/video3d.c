@@ -31,10 +31,22 @@ ForgeMesh* forge_mesh_load(const char* path) {
         return NULL;
     }
 
-    if (memcmp(hdr.magic, "PM3D", 4) != 0) {
+    if (memcmp(hdr.magic, "PM3D", 4) != 0 || hdr.version != 1) {
         sceIoClose(fd);
         return NULL;
     }
+
+    if (hdr.vertex_count == 0 || hdr.vertex_stride == 0 || hdr.vertex_count > 500000) {
+        sceIoClose(fd);
+        return NULL;
+    }
+
+    uint64_t total_size = (uint64_t)hdr.vertex_count * hdr.vertex_stride;
+    if (total_size > 16 * 1024 * 1024) {
+        sceIoClose(fd);
+        return NULL;
+    }
+    uint32_t data_size = (uint32_t)total_size;
 
     ForgeMesh* mesh = (ForgeMesh*)calloc(1, sizeof(ForgeMesh));
     if (!mesh) {
@@ -50,7 +62,6 @@ ForgeMesh* forge_mesh_load(const char* path) {
     memcpy(mesh->center,   hdr.center,   sizeof(float) * 3);
     mesh->radius        = hdr.radius;
 
-    uint32_t data_size = mesh->count * mesh->vertex_stride;
     mesh->vertices = memalign(16, data_size);
     if (!mesh->vertices) {
         free(mesh);
@@ -58,7 +69,12 @@ ForgeMesh* forge_mesh_load(const char* path) {
         return NULL;
     }
 
-    sceIoRead(fd, mesh->vertices, data_size);
+    if (sceIoRead(fd, mesh->vertices, data_size) != (int)data_size) {
+        free(mesh->vertices);
+        free(mesh);
+        sceIoClose(fd);
+        return NULL;
+    }
     sceIoClose(fd);
 
     /* Flush D-Cache to guarantee DMA read consistency */

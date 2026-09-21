@@ -32,7 +32,12 @@ static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
         return NULL;
     }
 
-    if (memcmp(hdr.magic, "PTEX", 4) != 0) {
+    if (memcmp(hdr.magic, "PTEX", 4) != 0 || hdr.version != 1) {
+        sceIoClose(fd);
+        return NULL;
+    }
+
+    if (hdr.pwr2_w == 0 || hdr.pwr2_h == 0 || hdr.pwr2_w > 512 || hdr.pwr2_h > 512) {
         sceIoClose(fd);
         return NULL;
     }
@@ -54,13 +59,26 @@ static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
     tex->in_vram       = to_vram;
 
     /* Read palette if present */
-    if (tex->has_palette && tex->palette_count > 0) {
+    if (tex->has_palette) {
+        if (tex->palette_count == 0 || tex->palette_count > 256) {
+            free(tex);
+            sceIoClose(fd);
+            return NULL;
+        }
         uint32_t pal_size = tex->palette_count * 4; /* RGBA8888 */
         tex->palette = malloc(pal_size);
-        if (tex->palette) {
-            sceIoRead(fd, tex->palette, pal_size);
-            sceKernelDcacheWritebackRange(tex->palette, pal_size);
+        if (!tex->palette) {
+            free(tex);
+            sceIoClose(fd);
+            return NULL;
         }
+        if (sceIoRead(fd, tex->palette, pal_size) != (int)pal_size) {
+            free(tex->palette);
+            free(tex);
+            sceIoClose(fd);
+            return NULL;
+        }
+        sceKernelDcacheWritebackRange(tex->palette, pal_size);
     }
 
     /* Compute pixel buffer size */
@@ -78,31 +96,47 @@ static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
         pixel_bytes = (tex->pwr2_w * tex->pwr2_h) << bpp_shift;
     }
 
+    if (pixel_bytes == 0 || pixel_bytes > 2 * 1024 * 1024) {
+        if (tex->palette) free(tex->palette);
+        free(tex);
+        sceIoClose(fd);
+        return NULL;
+    }
+
+    bool read_ok = false;
     if (to_vram) {
         void* vram_rel = forge_vram_alloc(pixel_bytes);
         if (vram_rel) {
             void* uncached_cpu = forge_vram_to_uncached_cpu(vram_rel);
-            sceIoRead(fd, uncached_cpu, pixel_bytes);
-            tex->data = vram_rel;
-        } else {
+            if (sceIoRead(fd, uncached_cpu, pixel_bytes) == (int)pixel_bytes) {
+                tex->data = vram_rel;
+                read_ok = true;
+            }
+        }
+        if (!read_ok) {
             tex->in_vram = false;
             tex->data = malloc(pixel_bytes);
             if (tex->data) {
-                sceIoRead(fd, tex->data, pixel_bytes);
-                sceKernelDcacheWritebackRange(tex->data, pixel_bytes);
+                if (sceIoRead(fd, tex->data, pixel_bytes) == (int)pixel_bytes) {
+                    sceKernelDcacheWritebackRange(tex->data, pixel_bytes);
+                    read_ok = true;
+                }
             }
         }
     } else {
         tex->data = malloc(pixel_bytes);
         if (tex->data) {
-            sceIoRead(fd, tex->data, pixel_bytes);
-            sceKernelDcacheWritebackRange(tex->data, pixel_bytes);
+            if (sceIoRead(fd, tex->data, pixel_bytes) == (int)pixel_bytes) {
+                sceKernelDcacheWritebackRange(tex->data, pixel_bytes);
+                read_ok = true;
+            }
         }
     }
 
     sceIoClose(fd);
 
-    if (!tex->data) {
+    if (!read_ok || !tex->data) {
+        if (tex->data && !tex->in_vram) free(tex->data);
         if (tex->palette) free(tex->palette);
         free(tex);
         return NULL;

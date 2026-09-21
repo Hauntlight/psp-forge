@@ -134,7 +134,12 @@ ForgeSound* forge_sound_load(const char* path) {
         return NULL;
     }
 
-    if (memcmp(hdr.magic, "PSND", 4) != 0) {
+    if (memcmp(hdr.magic, "PSND", 4) != 0 || hdr.version != 1) {
+        sceIoClose(fd);
+        return NULL;
+    }
+
+    if ((hdr.channels != 1 && hdr.channels != 2) || hdr.sample_rate != 44100 || hdr.data_size == 0 || hdr.data_size > 20 * 1024 * 1024) {
         sceIoClose(fd);
         return NULL;
     }
@@ -156,7 +161,12 @@ ForgeSound* forge_sound_load(const char* path) {
         return NULL;
     }
 
-    sceIoRead(fd, snd->pcm_data, hdr.data_size);
+    if (sceIoRead(fd, snd->pcm_data, hdr.data_size) != (int)hdr.data_size) {
+        free(snd->pcm_data);
+        free(snd);
+        sceIoClose(fd);
+        return NULL;
+    }
     sceIoClose(fd);
 
     sceKernelDcacheWritebackRange(snd->pcm_data, hdr.data_size);
