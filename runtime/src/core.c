@@ -59,6 +59,7 @@ static void setup_callbacks(void) {
 
 void forge_init(uint32_t flags) {
     (void)flags;
+    s_running = 1;
 
     /* Setup system callbacks so HOME button exits cleanly */
     setup_callbacks();
@@ -118,8 +119,20 @@ void forge_init(uint32_t flags) {
 }
 
 void forge_shutdown(void) {
+    /* Cleanup and reset active scene callbacks */
+    forge_scene_reset();
+
+    /* Stop audio thread and release hardware audio channel */
+    forge_audio_shutdown();
+
+    /* Reset VRAM scratchpad */
+    forge_vram_reset();
+
+    /* Terminate Graphics Utility */
     sceGuDisplay(GU_FALSE);
     sceGuTerm();
+
+    s_running = 0;
 }
 
 int forge_is_running(void) {

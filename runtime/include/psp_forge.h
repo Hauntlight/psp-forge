@@ -176,6 +176,7 @@ void        forge_sound_free(ForgeSound* snd);
 void        forge_sound_play(const ForgeSound* snd, uint8_t loop);
 void        forge_sound_stop(void);
 bool        forge_sound_is_playing(void);
+void        forge_audio_shutdown(void);
 
 /* ========================================================================= */
 /* 2D & 3D Collision Detection                                               */
@@ -264,6 +265,7 @@ struct ForgeScene {
 void        forge_scene_set(ForgeScene* scene);
 ForgeScene* forge_scene_get_current(void);
 void        forge_scene_update_and_draw(float dt);
+void        forge_scene_reset(void);
 
 #ifdef __cplusplus
 }

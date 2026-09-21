@@ -38,3 +38,11 @@ void forge_scene_update_and_draw(float dt) {
         s_current_scene->on_draw(s_current_scene, dt);
     }
 }
+
+void forge_scene_reset(void) {
+    if (s_current_scene && s_current_scene->on_destroy) {
+        s_current_scene->on_destroy(s_current_scene, 0.0f);
+    }
+    s_current_scene = NULL;
+    s_next_scene    = NULL;
+}
