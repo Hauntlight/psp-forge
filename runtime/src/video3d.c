@@ -19,6 +19,7 @@ typedef struct __attribute__((packed)) {
 } Pm3dHeader;
 
 static ForgeLight s_virtual_lights[FORGE_MAX_VIRTUAL_LIGHTS];
+static int        s_lighting_enabled = 0;
 
 ForgeMesh* forge_mesh_load(const char* path) {
     SceUID fd = forge_io_open(path);
@@ -103,6 +104,11 @@ void forge_set_light(uint8_t id, float x, float y, float z, uint32_t color_rgba,
 
 void forge_clear_lights(void) {
     memset(s_virtual_lights, 0, sizeof(s_virtual_lights));
+    for (int i = 0; i < 4; ++i) {
+        sceGuDisable(GU_LIGHT0 + i);
+    }
+    sceGuDisable(GU_LIGHTING);
+    s_lighting_enabled = 0;
 }
 
 void forge_cull_and_apply_lights(float obj_x, float obj_y, float obj_z) {
@@ -113,18 +119,18 @@ void forge_cull_and_apply_lights(float obj_x, float obj_y, float obj_z) {
     int count = 0;
 
     for (int i = 0; i < FORGE_MAX_VIRTUAL_LIGHTS; ++i) {
-        if (!s_virtual_lights[i].active) continue;
+        if (!s_virtual_lights[i].active || s_virtual_lights[i].intensity <= 0.001f) continue;
         float dx = s_virtual_lights[i].pos[0] - obj_x;
         float dy = s_virtual_lights[i].pos[1] - obj_y;
         float dz = s_virtual_lights[i].pos[2] - obj_z;
-        cand[count].id      = i;
+        cand[count].id = i;
         cand[count].dist_sq = dx * dx + dy * dy + dz * dz;
         count++;
     }
 
-    /* Partial insertion sort: find the 4 nearest in O(count * 4).
-     * Much cheaper than full O(n²) bubble sort for n=16, count<=4 hardware slots. */
     int slots = (count < 4) ? count : 4;
+
+    /* Partial selection sort for closest 4 lights */
     for (int s = 0; s < slots; ++s) {
         int min_idx = s;
         for (int j = s + 1; j < count; ++j) {
@@ -166,8 +172,10 @@ void forge_cull_and_apply_lights(float obj_x, float obj_y, float obj_z) {
 
     if (slots > 0) {
         sceGuEnable(GU_LIGHTING);
+        s_lighting_enabled = 1;
     } else {
         sceGuDisable(GU_LIGHTING);
+        s_lighting_enabled = 0;
     }
 }
 
@@ -187,7 +195,7 @@ void forge_draw_mesh_current(const ForgeMesh* mesh, const ForgeTexture* tex) {
         sceGuEnable(GU_TEXTURE_2D);
         sceGuTexMode(tex->format, 0, 0, tex->is_swizzled ? 1 : 0);
         sceGuTexImage(0, tex->pwr2_w, tex->pwr2_h, tex->pwr2_w, tex->data);
-        sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGBA);
+        sceGuTexFunc(s_lighting_enabled ? GU_TFX_MODULATE : GU_TFX_REPLACE, GU_TCC_RGBA);
         sceGuTexFilter(GU_LINEAR, GU_LINEAR);
         if (tex->has_palette && tex->palette) {
             sceGuClutMode(GU_PSM_8888, 0, 0xFF, 0);
@@ -197,7 +205,11 @@ void forge_draw_mesh_current(const ForgeMesh* mesh, const ForgeTexture* tex) {
         sceGuDisable(GU_TEXTURE_2D);
     }
 
-    sceGuDisable(GU_LIGHTING);
+    if (s_lighting_enabled) {
+        sceGuEnable(GU_LIGHTING);
+    } else {
+        sceGuDisable(GU_LIGHTING);
+    }
     sceGuDisable(GU_ALPHA_TEST);
 
     /* Synchronize matrix stack to hardware and draw */
