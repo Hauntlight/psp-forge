@@ -29,6 +29,8 @@ target_link_libraries(psp_3d_runner PRIVATE
     pspdisplay
     pspctrl
     psprtc
+    pspfpu
+    pspdebug
     pspkernel
     m
 )

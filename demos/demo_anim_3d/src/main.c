@@ -3,8 +3,6 @@
 
 PSP_MODULE_INFO("DEMO_ANIM_3D", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
-PSP_MAIN_THREAD_STACK_SIZE_KB(256);
-PSP_HEAP_SIZE_KB(16384);
 
 int main(int argc, char* argv[]) {
     if (argc > 0 && argv && argv[0]) {
@@ -116,5 +114,6 @@ int main(int argc, char* argv[]) {
     if (ped_tex)  forge_texture_free(ped_tex);
 
     forge_shutdown();
+    sceKernelExitGame();
     return 0;
 }

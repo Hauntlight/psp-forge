@@ -3,8 +3,6 @@
 
 PSP_MODULE_INFO("PSP_3D_RUNNER", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
-PSP_MAIN_THREAD_STACK_SIZE_KB(256);
-PSP_HEAP_SIZE_KB(16384);
 
 #define NUM_TRACK_SEGMENTS 6
 #define SEGMENT_LENGTH     6.0f
@@ -151,5 +149,6 @@ int main(int argc, char* argv[]) {
     if (jump_snd)   forge_sound_free(jump_snd);
 
     forge_shutdown();
+    sceKernelExitGame();
     return 0;
 }

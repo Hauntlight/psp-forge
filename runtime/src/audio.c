@@ -117,7 +117,14 @@ static int AudioThread(SceSize args, void *argp) {
 static void ensure_audio_thread_started(void) {
     if (s_audio_thid < 0) {
         s_audio_thread_running = 1;
-        s_audio_thid = sceKernelCreateThread("forge_audio_thread", AudioThread, 0x12, 0x10000, 0, NULL);
+        s_audio_thid = sceKernelCreateThread(
+            "forge_audio_thread",
+            AudioThread,
+            0x12,
+            0x10000,
+            PSP_THREAD_ATTR_USER | PSP_THREAD_ATTR_VFPU,
+            NULL
+        );
         if (s_audio_thid >= 0) {
             sceKernelStartThread(s_audio_thid, 0, NULL);
         }

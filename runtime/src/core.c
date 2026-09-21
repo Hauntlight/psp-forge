@@ -2,6 +2,8 @@
 #include <pspkernel.h>
 #include <pspdisplay.h>
 #include <psprtc.h>
+#include <pspfpu.h>
+#include <pspdebug.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -13,7 +15,7 @@ void* forge_vram_get_depth_buffer(void);
 /* Hardware Display List: must be aligned to 16 bytes */
 static unsigned int __attribute__((aligned(16))) s_display_list[262144];
 
-static int   s_running = 1;
+static volatile int s_running = 1;
 static void* s_current_fbp = NULL;
 
 /* Base path for asset loading (set by forge_set_base_path or auto-detected) */
@@ -34,7 +36,6 @@ static u64   s_fps_last_tick = 0;
 static int exit_callback(int arg1, int arg2, void *common) {
     (void)arg1; (void)arg2; (void)common;
     s_running = 0;
-    sceKernelExitGame();
     return 0;
 }
 
@@ -53,16 +54,31 @@ static void setup_callbacks(void) {
     }
 }
 
+void forge_debug_install_error_handler(void) {
+    pspDebugInstallErrorHandler(NULL);
+}
+
 /* ========================================================================= */
 /* Core Engine Implementation                                                */
 /* ========================================================================= */
 
 void forge_init(uint32_t flags) {
-    (void)flags;
     s_running = 1;
+
+    /* Disable FPU exception traps (div-by-zero, denormals, etc.) on real hardware */
+    pspFpuSetEnable(0);
 
     /* Setup system callbacks so HOME button exits cleanly */
     setup_callbacks();
+
+    /* Optional hardware blue-screen error handler */
+#if defined(FORGE_ENABLE_ERROR_HANDLER)
+    forge_debug_install_error_handler();
+#else
+    if (flags & FORGE_INIT_ERROR_HANDLER) {
+        forge_debug_install_error_handler();
+    }
+#endif
 
     /* Setup timer */
     sceRtcGetCurrentTick(&s_last_tick);
@@ -150,6 +166,10 @@ void forge_clear(uint32_t color_rgba8888) {
 }
 
 void forge_end_frame(void) {
+    if (!s_running) {
+        return;
+    }
+
     sceGuFinish();
     sceGuSync(0, 0);
 

@@ -27,9 +27,14 @@ extern "C" {
 #define FORGE_SCREEN_HEIGHT 272
 #define FORGE_BUF_WIDTH     512
 
+/* Flags for forge_init */
+#define FORGE_INIT_DEFAULT          0x00
+#define FORGE_INIT_ERROR_HANDLER    0x01
+
 void     forge_init(uint32_t flags);
 void     forge_shutdown(void);
 int      forge_is_running(void);
+void     forge_debug_install_error_handler(void);
 void     forge_begin_frame(void);
 void     forge_end_frame(void);
 void     forge_clear(uint32_t color_rgba8888);

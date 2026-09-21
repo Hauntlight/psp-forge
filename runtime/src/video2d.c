@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <malloc.h>
 
 typedef struct __attribute__((packed)) {
     char     magic[4];      /* "PTEX" */
@@ -58,7 +59,7 @@ static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
     tex->palette_count = hdr.palette_count;
     tex->in_vram       = to_vram;
 
-    /* Read palette if present */
+    /* Read palette if present (must be 16-byte aligned for GPU CLUT DMA) */
     if (tex->has_palette) {
         if (tex->palette_count == 0 || tex->palette_count > 256) {
             free(tex);
@@ -66,7 +67,7 @@ static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
             return NULL;
         }
         uint32_t pal_size = tex->palette_count * 4; /* RGBA8888 */
-        tex->palette = malloc(pal_size);
+        tex->palette = memalign(16, pal_size);
         if (!tex->palette) {
             free(tex);
             sceIoClose(fd);
@@ -115,7 +116,7 @@ static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
         }
         if (!read_ok) {
             tex->in_vram = false;
-            tex->data = malloc(pixel_bytes);
+            tex->data = memalign(16, pixel_bytes);
             if (tex->data) {
                 if (sceIoRead(fd, tex->data, pixel_bytes) == (int)pixel_bytes) {
                     sceKernelDcacheWritebackRange(tex->data, pixel_bytes);
@@ -124,7 +125,7 @@ static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
             }
         }
     } else {
-        tex->data = malloc(pixel_bytes);
+        tex->data = memalign(16, pixel_bytes);
         if (tex->data) {
             if (sceIoRead(fd, tex->data, pixel_bytes) == (int)pixel_bytes) {
                 sceKernelDcacheWritebackRange(tex->data, pixel_bytes);

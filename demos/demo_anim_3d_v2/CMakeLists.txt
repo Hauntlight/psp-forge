@@ -17,7 +17,7 @@ target_compile_options(demo_anim_3d_v2 PRIVATE
 target_link_libraries(demo_anim_3d_v2 PRIVATE
     pspforge
     pspgum pspgu pspge
-    pspaudio pspdisplay pspctrl psprtc pspkernel m
+    pspaudio pspdisplay pspctrl psprtc pspfpu pspdebug pspkernel m
 )
 
 create_pbp_file(

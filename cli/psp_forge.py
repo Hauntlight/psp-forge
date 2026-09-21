@@ -204,8 +204,12 @@ def cmd_build(args):
             print("    Make sure PSPDEV is installed or use --docker.")
             sys.exit(1)
 
+        extra_flags = []
+        if getattr(args, "error_handler", False):
+            extra_flags.append("-DFORGE_ENABLE_ERROR_HANDLER=1")
+
         print(f"[+] Configuring project with psp-cmake ({build_type})...")
-        cfg_cmd = ["psp-cmake", "-B", "build", f"-DCMAKE_BUILD_TYPE={build_type}"]
+        cfg_cmd = ["psp-cmake", "-B", "build", f"-DCMAKE_BUILD_TYPE={build_type}"] + extra_flags
         res = subprocess.run(cfg_cmd, env=env)
         if res.returncode != 0:
             print("[-] Configuration failed.")
@@ -339,6 +343,7 @@ def main():
     p_build.add_argument("--clean", action="store_true", help="Remove build directory before compiling")
     p_build.add_argument("--release", action="store_true", help="Build with optimizations (default)")
     p_build.add_argument("--debug", action="store_true", help="Build with debug symbols")
+    p_build.add_argument("--error-handler", action="store_true", help="Enable hardware blue-screen error handler on crash")
     p_build.add_argument("--docker", action="store_true", help="Build inside official PSPDEV Docker container")
     p_build.add_argument("--force", action="store_true", help="Force rebuild of cooked assets")
 

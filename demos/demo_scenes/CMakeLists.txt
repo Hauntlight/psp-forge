@@ -17,7 +17,7 @@ target_compile_options(demo_scenes PRIVATE
 target_link_libraries(demo_scenes PRIVATE
     pspforge
     pspgum pspgu pspge
-    pspaudio pspdisplay pspctrl psprtc pspkernel m
+    pspaudio pspdisplay pspctrl psprtc pspfpu pspdebug pspkernel m
 )
 
 create_pbp_file(

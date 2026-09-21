@@ -4,8 +4,6 @@
 
 PSP_MODULE_INFO("DEMO_ANIM_3D_V2", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
-PSP_MAIN_THREAD_STACK_SIZE_KB(256);
-PSP_HEAP_SIZE_KB(16384);
 
 typedef enum {
     STATE_IDLE = 0,
@@ -397,5 +395,6 @@ int main(int argc, char* argv[]) {
     if (shadow_tex)  forge_texture_free(shadow_tex);
 
     forge_shutdown();
+    sceKernelExitGame();
     return 0;
 }

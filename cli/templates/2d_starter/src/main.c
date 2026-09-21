@@ -4,8 +4,6 @@
 
 PSP_MODULE_INFO("PSP_2D_GAME", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
-PSP_MAIN_THREAD_STACK_SIZE_KB(256);
-PSP_HEAP_SIZE_KB(16384);
 
 int main(int argc, char* argv[]) {
     if (argc > 0 && argv && argv[0]) {
@@ -98,5 +96,6 @@ int main(int argc, char* argv[]) {
     if (hero_tex) forge_texture_free(hero_tex);
     if (coin_snd) forge_sound_free(coin_snd);
     forge_shutdown();
+    sceKernelExitGame();
     return 0;
 }

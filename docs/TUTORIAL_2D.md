@@ -74,7 +74,7 @@ target_compile_options(psp_2d_game PRIVATE
 target_link_libraries(psp_2d_game PRIVATE
     pspforge
     pspgum pspgu pspge
-    pspaudio pspdisplay pspctrl psprtc pspkernel m
+    pspaudio pspdisplay pspctrl psprtc pspfpu pspdebug pspkernel m
 )
 
 # Crucial: BUILD_PRX ensures compatibility with both PPSSPP and real hardware
@@ -99,8 +99,6 @@ Here is the complete implementation with texture loading, differential input, an
 
 PSP_MODULE_INFO("PSP_2D_GAME", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
-PSP_MAIN_THREAD_STACK_SIZE_KB(256);
-PSP_HEAP_SIZE_KB(16384);
 
 int main(int argc, char* argv[]) {
     // 1. Transparent path resolution on Memory Stick or PC
@@ -192,6 +190,7 @@ int main(int argc, char* argv[]) {
     if (coin_snd) forge_sound_free(coin_snd);
 
     forge_shutdown();
+    sceKernelExitGame();
     return 0;
 }
 ```
