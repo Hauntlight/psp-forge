@@ -154,7 +154,7 @@ void       forge_draw_mesh_node(
 /* 3D Skeletal Animation & Quaternions                                       */
 /* ========================================================================= */
 
-#define FORGE_MAX_BONES    64
+#define FORGE_MAX_BONES    96
 #define FORGE_MAX_HW_BONES 8
 
 typedef struct {

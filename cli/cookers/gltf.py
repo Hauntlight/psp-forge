@@ -173,10 +173,10 @@ def cook_gltf_animations(model: GLTFModel, output_dir: str, prefix: str) -> List
     if not joints:
         return []
 
-    # Limit to maximum 64 bones supported by runtime
-    if len(joints) > 64:
-        print(f"  [!] Note: Rig has {len(joints)} joints, clamping tracks to 64 bones for PSP.")
-        joints = joints[:64]
+    # Limit to maximum 96 bones supported by runtime
+    if len(joints) > 96:
+        print(f"  [!] Note: Rig has {len(joints)} joints, clamping tracks to 96 bones for PSP.")
+        joints = joints[:96]
 
     output_files = []
     fps = 30.0
@@ -528,6 +528,25 @@ def cook_gltf_textures(model: GLTFModel, output_dir: str, prefix: str) -> Tuple[
         raw_bytes = model.bin_data[offset:offset + length]
         try:
             im = Image.open(io.BytesIO(raw_bytes)).convert("RGBA")
+            # Auto-detect if image has a solid neutral matte background (e.g. gray (95,95,95))
+            # while having no transparent pixels originally.
+            alpha_data = im.getchannel("A").getdata()
+            min_a = min(alpha_data)
+            if min_a > 180:
+                # Check corners for solid background color
+                corners = [im.getpixel((0, 0)), im.getpixel((im.width - 1, 0)),
+                           im.getpixel((0, im.height - 1)), im.getpixel((im.width - 1, im.height - 1))]
+                c0 = corners[0][:3]
+                if all(max(abs(c[i] - c0[i]) for i in range(3)) <= 3 for c in corners):
+                    # Solid matte background detected! Check if corners are non-black/white neutral
+                    if c0 == (95, 95, 95) or (abs(c0[0] - c0[1]) <= 2 and abs(c0[1] - c0[2]) <= 2 and 40 <= c0[0] <= 210):
+                        pix = im.load()
+                        for py in range(im.height):
+                            for px in range(im.width):
+                                r, g, b, a = pix[px, py]
+                                if max(abs(r - c0[0]), abs(g - c0[1]), abs(b - c0[2])) <= 8:
+                                    pix[px, py] = (0, 0, 0, 0)
+                        print(f"  [+] Auto keyed-out solid matte background {c0} for image {idx} ({img.get('name')})")
             pil_images.append(im)
         except Exception as e:
             print(f"  [!] Warning: Failed to decode image {idx}: {e}")
@@ -604,8 +623,8 @@ def cook_gltf_model(model: GLTFModel, output_path: str, uv_transforms: Optional[
 
     skins = model.gltf.get("skins", [])
     joints = skins[0].get("joints", []) if skins else []
-    if len(joints) > 64:
-        joints = joints[:64]
+    if len(joints) > 96:
+        joints = joints[:96]
 
     # Map parent of each node
     parent_map: Dict[int, int] = {}
@@ -720,6 +739,9 @@ def cook_gltf_model(model: GLTFModel, output_path: str, uv_transforms: Optional[
                 # Build each skinned chunk
                 for c in raw_chunks:
                     palette = sorted(list(c["bones"]))
+                    num_local_bones = len(palette)
+                    if num_local_bones == 0:
+                        continue
                     # Pad palette to 8
                     palette_map = {global_b: local_idx for local_idx, global_b in enumerate(palette)}
                     palette_padded = palette + [0] * (8 - len(palette))
@@ -728,9 +750,9 @@ def cook_gltf_model(model: GLTFModel, output_path: str, uv_transforms: Optional[
                     min_x, min_y, min_z = float("inf"), float("inf"), float("inf")
                     max_x, max_y, max_z = float("-inf"), float("-inf"), float("-inf")
 
-                    # We support 2 weights hardware blending (GU_WEIGHTS(2))
-                    vtx_format = GU_WEIGHTS(2) | GU_WEIGHT_32BITF | GU_TEXTURE_32BITF | GU_NORMAL_32BITF | GU_VERTEX_32BITF | GU_TRANSFORM_3D
-                    vtx_stride = 40  # 2*4 + 2*4 + 3*4 + 3*4 = 40 bytes (multiple of 4)
+                    # PSP GE hardware blending: GU_WEIGHTS(n) applies BoneMatrix[i] to weight[i] for i in 0..n-1
+                    vtx_format = GU_WEIGHTS(num_local_bones) | GU_WEIGHT_32BITF | GU_TEXTURE_32BITF | GU_NORMAL_32BITF | GU_VERTEX_32BITF | GU_TRANSFORM_3D
+                    vtx_stride = num_local_bones * 4 + 2 * 4 + 3 * 4 + 3 * 4  # e.g. 8*4 + 32 = 64 bytes
 
                     vtx_count = len(c["triangles"]) * 3
                     for tri in c["triangles"]:
@@ -747,25 +769,22 @@ def cook_gltf_model(model: GLTFModel, output_path: str, uv_transforms: Optional[
                             min_x, min_y, min_z = min(min_x, px), min(min_y, py), min(min_z, pz)
                             max_x, max_y, max_z = max(max_x, px), max(max_y, py), max(max_z, pz)
 
-                            # Extract top 2 local weights
-                            j_pairs = []
+                            # Fill weights for each slot in this chunk's palette
+                            slot_weights = [0.0] * num_local_bones
                             for jb, wb in zip(joint_attr[vi], weight_attr[vi]):
-                                if jb in palette_map:
-                                    j_pairs.append((palette_map[jb], wb))
-                            j_pairs.sort(key=lambda x: x[1], reverse=True)
-                            w0 = j_pairs[0][1] if len(j_pairs) > 0 else 1.0
-                            w1 = j_pairs[1][1] if len(j_pairs) > 1 else 0.0
-                            tot_w = w0 + w1
+                                if wb > 0.001 and jb in palette_map:
+                                    slot_weights[palette_map[jb]] += wb
+
+                            tot_w = sum(slot_weights)
                             if tot_w > 1e-6:
-                                w0 /= tot_w
-                                w1 /= tot_w
+                                slot_weights = [w / tot_w for w in slot_weights]
                             else:
-                                w0, w1 = 1.0, 0.0
+                                slot_weights[0] = 1.0
 
                             # PSPSDK vertex layout order: Weights -> Texture UV -> Normal -> Position
                             vtx_bytes.extend(struct.pack(
-                                "<2f2f3f3f",
-                                w0, w1,
+                                f"<{num_local_bones}f2f3f3f",
+                                *slot_weights,
                                 u, v,
                                 nx, ny, nz,
                                 px, py, pz
