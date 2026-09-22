@@ -96,7 +96,9 @@ The PSP hardware imposes strict memory and rasterizer constraints. The Asset Coo
 * **Texture Swizzling**: Interleaves pixel data into $16 \times 8$ byte tiles to eliminate GPU cache misses during texture sampling.
 * **Power-of-Two (POT) Padding**: Expands textures to $2^n$ dimensions (up to $512 \times 512$).
 * **Format Conversion & CLUT Quantization**: Supports `RGBA8888`, `RGBA5551`, `RGBA4444`, and indexed CLUT8 (256 colors) / CLUT4 (16 colors).
+* **Material Atlas Fusion & Auto-Chroma Keying**: Fuses multi-material glTF models into a single $512 \times 512$ master texture atlas with UV remapping, converting neutral matte backgrounds into transparent cutouts.
 * **Wavefront OBJ to `.p3d`**: Packs vertices into binary stream with 16-byte alignment, normals, texture coordinates, and precalculated AABB bounding boxes.
+* **glTF / GLB to Skeletal Mesh & Animations**: Decomposes complex rigs (up to 96 bones) into sub-mesh chunks referencing $\le 8$ local bones, generating `.p3d` and 30 FPS `.panm` animation clips.
 * **Audio Transcoder**: Resamples WAV/audio to signed 16-bit PCM at 44,100 Hz with 64-sample buffer alignment.
 * **Hardware Budget Warnings**:
   * ⚠️ Warns if 3D models exceed 3,000 triangles or 256 KB.
@@ -107,8 +109,8 @@ The PSP hardware imposes strict memory and rasterizer constraints. The Asset Coo
 ### 3. C99 Micro-Engine (`libpspforge`)
 * **Zero Per-Frame Dynamic Allocation**: Zero allocations during the 60 FPS game loop. The 2 MB on-chip eDRAM is deterministically partitioned: Draw buffer ($544\text{ KiB}$), Display buffer ($544\text{ KiB}$), 16-bit Depth buffer ($272\text{ KiB}$), and Texture scratchpad ($688\text{ KiB}$). Dynamic allocations (`malloc`, `free`) are strictly confined to asset loading during scene transitions.
 * **Display List & Memory Management**: Safe 16-byte aligned GU Display Lists with D-Cache writeback (`sceKernelDcacheWritebackRange`) for uploaded textures, vertices, and audio DMA buffers.
-* **2D & 3D Pipelines**: Fast 2D sprite batching (`GU_SPRITES`), perspective projection, camera view matrix, articulated hierarchical node transforms (`forge_draw_mesh_node`), and distance-based virtual light culling.
-* **3D Skeletal Animation**: Hardware vertex skinning (`GU_WEIGHTS`, `sceGuBoneMatrix`), automated glTF/GLB cooker with $\le 8$ bone sub-mesh chunking, `.panm` animation clips with shortest-arc quaternion SLERP, and runtime crossfading (`forge_anim3d_crossfade`).
+* **2D & 3D Pipelines**: Fast 2D sprite batching (`GU_SPRITES`), perspective projection, camera view matrix, articulated hierarchical node transforms (`forge_draw_mesh_node`), hardware alpha test control (`forge_set_alpha_test`), and distance-based virtual light culling.
+* **3D Skeletal Animation**: Native hardware vertex skinning (`GU_WEIGHTS`, `sceGuBoneMatrix`), support for skeletons up to 96 bones, sub-mesh chunking ($\le 8$ local bones per chunk), `.panm` animation playback with shortest-arc quaternion SLERP, and zero-allocation runtime sampling.
 * **Collision Engine**: Lightweight, allocation-free 2D primitives (`ForgeRect`, `ForgeCircle`) and 3D bounding volumes (`ForgeAABB`, `ForgeSphere`) with analytical intersection tests.
 * **2D Flipbook Animation**: Grid-based spritesheet player (`ForgeSpriteAnim`) with frame timing, UV coordinate computation, and playback loops.
 * **Scene Manager (`ForgeScene`)**: Lifecycle state machine (`on_init`, `on_update`, `on_draw`, `on_destroy`) enabling clean memory recycling between Title Menus and Gameplay levels in $24\text{ MB}$ RAM.

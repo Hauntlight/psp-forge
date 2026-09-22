@@ -154,6 +154,15 @@ Renders a 2D textured quad:
 
 ## 5. 3D Pipeline, Meshes & Lighting
 
+### `void forge_set_alpha_test(bool enable, uint8_t ref_value)`
+Enables or disables the hardware Graphics Engine alpha test (`sceGuAlphaFunc(GU_GREATER, ref_value, 0xFF)` / `sceGuEnable(GU_ALPHA_TEST)`).
+* **Parameters:** `enable` (`true` or `false`), `ref_value` (threshold, e.g. `128` for 50% opacity cutouts).
+* **Hardware & Architectural Justification**:
+  * Unlike software alpha blending (`GU_BLEND`), which requires reading the destination pixel from eDRAM, blending in the rasterizer, and writing back (incurring a heavy read-modify-write bandwidth penalty), **alpha testing** discards transparent fragments *before* they are written to the depth buffer (Z-buffer).
+  * **Zero CPU sorting needed**: Because discarded fragments never update the Z-buffer, cutouts like foliage, eyes, eyelashes, and decals do not require sorting polygons back-to-front on the Allegrex CPU.
+  * Essential for skeletal models with transparent textures (eyebrows, hair strands) to prevent transparent quads from occluding opaque geometry behind them.
+
+
 ### 3D Struct Definitions
 ```c
 typedef struct __attribute__((aligned(16))) {
@@ -316,66 +325,109 @@ struct ForgeScene {
 
 ## 10. 3D Skeletal Animation & Multi-Chunk Models
 
-Support for rigged characters, forward kinematics animation sampling, and hardware vertex blending:
+PSP-Forge includes a complete 3D skeletal mesh and keyframe animation runtime supporting Forward Kinematics (FK) and hardware vertex skinning:
 
 ```c
-#define FORGE_MAX_BONES    64
+#define FORGE_MAX_BONES    96
 #define FORGE_MAX_HW_BONES 8
 
-typedef struct { float x, y, z, w; } ForgeQuat;
+typedef struct {
+    float x, y, z, w;
+} ForgeQuat;
 
 typedef struct {
-    char            name[32];
-    int32_t         parent_index;
-    ScePspFVector3  rest_pos;
-    ForgeQuat       rest_rot;
-    ScePspFVector3  rest_scale;
-    ScePspFMatrix4  inv_bind_matrix;
+    char     name[24];             /* Identifier (e.g. "DEF-spine", "head") */
+    uint8_t  parent_index;         /* Parent node index (0xFF = root) */
+    uint8_t  reserved[3];
+    float    local_pos[3];         /* Neutral rest position */
+    float    local_rot[4];         /* Neutral rest quaternion (x,y,z,w) */
+    float    inv_bind_matrix[16];  /* 4x4 inverse bind matrix for skinning */
 } ForgeBoneDef;
 
+typedef struct __attribute__((packed)) {
+    char     magic[4];             /* "PANM" */
+    uint16_t version;              /* 1 */
+    uint16_t bone_count;
+    uint32_t frame_count;
+    float    framerate;
+    float    duration;
+    float    pos_scale;            /* Scale factor for compressed positions (e.g. 0.001f) */
+    uint8_t  reserved[8];
+} PanmHeader;
+
+typedef struct __attribute__((packed)) {
+    int16_t rot_quat[4];           /* Quantized x,y,z,w (* 32767) */
+    int16_t pos[3];                /* Quantized x,y,z: pos = raw * pos_scale */
+    int16_t reserved;
+} ForgeBoneSample;
+
 typedef struct {
-    uint32_t        num_chunks;
+    PanmHeader       header;
+    ForgeBoneSample* samples;      /* frame_count * bone_count samples */
+} ForgeAnimClip;
+
+typedef struct {
+    ForgeMesh* mesh;               /* Geometry chunk */
+    int16_t    node_index;         /* Mode A: attached bone index (-1 if skinned) */
+    uint8_t    num_local_bones;    /* Mode B: number of active local bones (<= 8) */
+    uint8_t    bone_palette[8];    /* Mode B: maps local bone index (0..7) to global bone */
+} ForgeModelChunk;
+
+typedef struct {
+    uint16_t         bone_count;
+    ForgeBoneDef*    bones;
+    uint16_t         chunk_count;
     ForgeModelChunk* chunks;
-    uint32_t        num_bones;
-    ForgeBoneDef*   bones;
-    ForgeTexture*   texture;
 } ForgeModel3D;
 
 typedef struct {
-    const ForgeModel3D*   model;
-    const ForgeAnimClip*  current_clip;
-    const ForgeAnimClip*  blend_clip;
-    float                 current_time;
-    float                 blend_time;
-    float                 crossfade_duration;
-    float                 crossfade_timer;
-    float                 playback_speed;
-    bool                  is_looping;
-    bool                  is_playing;
-    ScePspFMatrix4        bone_world_matrices[FORGE_MAX_BONES];
-    ScePspFMatrix4        bone_skin_matrices[FORGE_MAX_BONES];
+    const ForgeAnimClip* clip;
+    float                time;
+    float                speed;
+    bool                 loop;
+    bool                 is_playing;
+    bool                 finished;
+    ScePspFMatrix4       world_matrices[FORGE_MAX_BONES]; /* Computed world transforms */
+    ScePspFMatrix4       skin_matrices[FORGE_MAX_BONES];  /* world * inv_bind_matrix */
 } ForgeAnimator;
 ```
 
-### Quaternion Math & Interpolation:
-* `ForgeQuat forge_quat_identity(void);`: Returns the identity quaternion `(0, 0, 0, 1)`.
-* `ForgeQuat forge_quat_normalize(ForgeQuat q);`: Normalizes a quaternion.
-* `ForgeQuat forge_quat_slerp(ForgeQuat a, ForgeQuat b, float t);`: Spherical linear interpolation between two quaternions along the shortest arc.
-* `void forge_quat_to_matrix(ForgeQuat q, ScePspFMatrix4* out);`: Converts a unit quaternion to a $4 \times 4$ rotation matrix.
+### Quaternion Math Functions:
+* `void forge_quat_identity(ForgeQuat* q);`: Sets `q` to the identity quaternion `(0, 0, 0, 1)`.
+* `void forge_quat_normalize(ForgeQuat* q);`: Normalizes quaternion `q` in-place.
+* `void forge_quat_slerp(ForgeQuat* out, const ForgeQuat* a, const ForgeQuat* b, float t);`: Computes spherical linear interpolation along the shortest arc ($t \in [0.0, 1.0]$) and stores the result in `out`.
+* `void forge_quat_to_matrix(ScePspFMatrix4* m, const ForgeQuat* q, const float pos[3]);`: Converts quaternion `q` and translation vector `pos` into a 16-element column-major $4 \times 4$ transformation matrix `m`.
 
-### Animation Clips (`.panm`):
-* `ForgeAnimClip* forge_anim3d_clip_load(const char* path);`: Loads a binary `.panm` animation clip into 16-byte aligned memory and flushes D-Cache.
-* `void forge_anim3d_clip_free(ForgeAnimClip* clip);`: Releases memory associated with an animation clip.
+### Model3D Functions:
+* `ForgeModel3D* forge_model3d_load(const char* path);`: Loads a multi-chunk binary model file (`.p3d` with P3D2 header) containing skeletal bones, chunks, and sub-mesh vertex data.
+* `void forge_model3d_free(ForgeModel3D* model);`: Frees all chunks, vertex buffers, and bone hierarchies.
+* `void forge_model3d_draw(const ForgeModel3D* model, const ForgeAnimator* animator, const ForgeTexture* tex);`: Renders the model using the current model matrix on the Gum stack. Evaluates Mode A (hierarchical node positioning) or Mode B (hardware vertex skinning via `sceGuBoneMatrix(0..7)` and `GU_WEIGHTS`).
 
-### Animator State Machine:
-* `void forge_anim3d_init(ForgeAnimator* anim, const ForgeModel3D* model);`: Initializes animator with rest pose transforms.
-* `void forge_anim3d_play(ForgeAnimator* anim, const ForgeAnimClip* clip, bool loop);`: Starts playing a clip immediately.
-* `void forge_anim3d_crossfade(ForgeAnimator* anim, const ForgeAnimClip* clip, float duration, bool loop);`: Starts a smooth crossfade blend to a new animation clip over `duration` seconds.
-* `void forge_anim3d_update(ForgeAnimator* anim, float dt);`: Advances animation timing, computes joint transformations, and evaluates forward kinematics hierarchy.
+### Skeletal Animation Functions:
+* `ForgeAnimClip* forge_anim3d_load(const char* path);`: Loads a binary `.panm` animation clip file into 16-byte aligned memory and performs D-Cache writeback.
+* `void forge_anim3d_free(ForgeAnimClip* clip);`: Releases memory associated with the animation clip.
+* `void forge_anim3d_init(ForgeAnimator* animator);`: Initializes the animator state, setting identity transforms and zero time.
+* `void forge_anim3d_play(ForgeAnimator* animator, const ForgeAnimClip* clip, bool loop);`: Binds `clip` to `animator`, resets playback time to 0, and starts playback.
+* `void forge_anim3d_stop(ForgeAnimator* animator);`: Stops playback.
+* `void forge_anim3d_set_speed(ForgeAnimator* animator, float speed);`: Sets playback rate multiplier (default `1.0f`).
+* `void forge_anim3d_update(ForgeAnimator* animator, const ForgeModel3D* model, float dt);`: Advances playback time, samples and SLERPs bone transforms from keyframes, and computes the Forward Kinematics cascade and skinning matrices.
 
-### Multi-Chunk Model Loading & Rendering:
-* `ForgeModel3D* forge_model3d_load(const char* path);`: Loads a multi-chunk P3D2 model file and its bone hierarchy.
-* `void forge_model3d_free(ForgeModel3D* model);`: Releases all sub-mesh chunks, bone definitions, and vertex arrays.
-* `void forge_model3d_set_texture(ForgeModel3D* model, ForgeTexture* tex);`: Binds a shared texture to the model.
-* `void forge_model3d_draw(const ForgeModel3D* model, const ForgeAnimator* anim, float x, float y, float z, float rx, float ry, float rz, float scale);`: Dispatches multi-chunk geometry to the hardware Graphics Engine, binding chunk skinning palettes to `sceGuBoneMatrix(0..7)` for continuous skinning (Mode B) or evaluating node transforms (Mode A).
+---
+
+## 11. Hardware & Engine Constraints & Architectural Rationale
+
+To write high-performance 60 FPS homebrew on the Sony PSP, developers must respect the physical constraints of the hardware. The table below outlines these rules, their limits, and the exact architectural reason for each:
+
+| Subsystem / Feature | Constraint / Limit | Hardware & Architectural Rationale |
+|---|---|---|
+| **Max Global Bones** | `FORGE_MAX_BONES = 96` | Skeletons are solved on the Allegrex CPU using Forward Kinematics (FK). `ForgeAnimator` statically allocates matrices (`world_matrices[96]`, `skin_matrices[96]`), consuming exactly $12.5\text{ KiB}$ of BSS memory per animator, avoiding heap fragmentation in the $24\text{ MB}$ user RAM. |
+| **Hardware Bones per Chunk** | `FORGE_MAX_HW_BONES = 8` (`GU_WEIGHTS(1..8)`) | The PSP Graphics Engine (GE) hardware only has 8 skinning matrix registers (`sceGuBoneMatrix(0..7)`). The GE vertex format applies matrix $i$ directly to weight $i$ with no bone index attribute per-vertex. Therefore, the asset cooker splits meshes into sub-chunks referencing $\le 8$ local bones. |
+| **Texture Dimensions** | Power-of-Two ($2^n$), Max $512 \times 512$ | The PSP GE texture sampling unit only supports texture wrapping, mipmapping, and hardware filtering on power-of-two dimensions $\le 512$. Non-POT dimensions cause texture wrapping artifacts or display distortion. |
+| **Material Atlas Fusion** | Single $512 \times 512$ texture per skinned model | State changes (`sceGuTexImage`, display list flushes) on the PSP GE stall the command pipeline. Fusing multiple materials into an atlas allows the micro-engine to render the entire character in a single unified draw sequence at 60 FPS. |
+| **Alpha Testing vs Blending** | `forge_set_alpha_test(true, 128)` for cutouts | Software alpha blending (`GU_BLEND`) triggers an expensive read-modify-write cycle against the 2 MB eDRAM framebuffer and requires sorting quads back-to-front on the CPU. Alpha test discards fragments immediately without touching the depth buffer, requiring zero CPU sorting. |
+| **Vertex Memory Alignment** | 16-byte boundary (`aligned(16)`) | The PSP DMA controller transfers vertices directly from main RAM to the Graphics Engine. Unaligned memory addresses cause hardware bus exceptions or severe cache stalls on the Allegrex CPU/GE interface. |
+| **VRAM Scratchpad Budget** | Max $688\text{ KiB}$ | Total on-chip eDRAM is exactly 2048 KiB. Draw ($544\text{ KiB}$), Display ($544\text{ KiB}$), and 16-bit Z-buffer ($272\text{ KiB}$) occupy $1360\text{ KiB}$, leaving exactly $688\text{ KiB}$ for the ultra-fast scratchpad. Textures that do not fit in scratchpad must remain in main RAM. |
+| **Virtual Light Culling** | Max 16 virtual lights, 4 active (`GU_LIGHT0..3`) | The PSP GE provides only 4 hardware directional/point light registers. `forge_cull_and_apply_lights()` culls up to 16 virtual scene lights by 3D distance and uploads the 4 closest to hardware registers each draw call. |
+| **Audio Chunk Alignment** | Multiples of 64 samples (128 bytes, 44.1 kHz PCM) | The PSP hardware audio DMAC processes DMA transfers in fixed 64-sample blocks. Buffer misalignment causes audio clicking, buffer underruns, or hardware channel lockups. |
+
 

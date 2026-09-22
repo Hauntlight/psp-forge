@@ -210,7 +210,78 @@ sceGumPopMatrix();
 
 ---
 
-## 6. Hardware Rasterizer & Frustum Clipping Tip
+## 6. Part 3: Skeletal Skinning & glTF Animation (`demo_anim_skeletal`)
+
+While hierarchical rigid models (Mode A) work wonderfully for armored knights and robots, organic characters (such as humanoids with clothing, anime characters, or creatures) require **smooth continuous skinning** across joints (Mode B).
+
+PSP-Forge provides a complete automated glTF skeletal pipeline:
+
+```text
+3D Rigged Model (glTF / GLB)
+     │
+     ├── Triangle Clustering (cli/cookers/gltf.py)
+     │    └── Subdivides mesh into sub-chunks referencing <= 8 local bones
+     │
+     ├── Material Atlas Fusion
+     │    └── Packs multiple materials into one 512x512 texture & remaps UVs
+     │
+     ├── Auto-Chroma Keying
+     │    └── Detects solid neutral matte background of facial features -> transparent
+     │
+     └── Animation Baking (.panm)
+          └── Samples keyframes at 30 FPS, compresses to 16-byte fixed samples
+```
+
+### Mode A vs Mode B Comparison
+
+| Feature | Mode A (Rigid Hierarchical) | Mode B (Skinned Mesh Chunks) |
+|---|---|---|
+| **Best suited for** | Mechas, segmented armor, vehicles, robots | Humans, organic creatures, cloth, hair |
+| **Joint Deformation** | Rigid mesh per node (no bending at vertices) | Smooth vertex blending (`GU_WEIGHTS`) |
+| **Bone Limit** | Arbitrary tree depth (uses `pspgum` stack) | Up to 96 bones in skeleton, $\le 8$ per chunk |
+| **GPU Execution** | Single world transform per draw call | Up to 8 bone matrices loaded to `sceGuBoneMatrix` |
+| **Asset Format** | Separate `.obj` / `.p3d` files per limb | Single unified `.p3d` (P3D2 multi-chunk) |
+| **Implementation** | `forge_draw_mesh_node()` or `pspgum` cascade | `forge_model3d_draw(model, &animator, tex)` |
+
+### Practical Code Example: Skeletal Character Loop
+```c
+// 1. Load cooked assets
+ForgeModel3D* model = forge_model3d_load("assets/character.p3d");
+ForgeTexture* tex   = forge_texture_load("assets/character.tex");
+ForgeAnimClip* clip = forge_anim3d_load("assets/character_walk.panm");
+
+// 2. Initialize animator
+ForgeAnimator anim;
+forge_anim3d_init(&anim);
+forge_anim3d_play(&anim, clip, true);
+
+// 3. Enable hardware alpha testing for eyelashes/eyes/hair cutouts
+forge_set_alpha_test(true, 128);
+
+// Inside 60 FPS frame loop:
+float dt = forge_get_delta_time();
+forge_anim3d_update(&anim, model, dt);
+
+// Camera-relative controls:
+// Calculate movement vector aligned with camera orbital angle
+float move_x = input.analog_x * cosf(cam_angle) - input.analog_y * sinf(cam_angle);
+float move_z = input.analog_x * sinf(cam_angle) + input.analog_y * cosf(cam_angle);
+
+sceGumPushMatrix();
+{
+    ScePspFVector3 pos = { char_x, char_y, char_z };
+    ScePspFVector3 rot = { 0.0f, facing_angle, 0.0f };
+    sceGumTranslate(&pos);
+    sceGumRotateXYZ(&rot);
+
+    forge_model3d_draw(model, &anim, tex);
+}
+sceGumPopMatrix();
+```
+
+---
+
+## 7. Hardware Rasterizer & Frustum Clipping Tip
 
 > [!WARNING]
 > **PSP Near-Plane Geometry Discard ($W \le 0$)**:  
@@ -221,7 +292,7 @@ sceGumPopMatrix();
 
 ---
 
-## 7. Building and Running the Demos
+## 8. Building and Running the Demos
 
 ### Run Demo 1 (Floating Gem):
 ```bash
@@ -239,11 +310,12 @@ psp-forge build
 psp-forge run
 ```
 
-### Interactive Controls (Demo V2):
+### Interactive Controls (Demo V2 & Skeletal Demo):
 | Button | Action |
 |---|---|
-| **Analog Stick / D-Pad** | Walk & Run across the 3D arena |
+| **Analog Stick / D-Pad** | Walk & Run across the 3D arena (Camera-relative) |
 | **Cross ($\times$)** | Ballistic Jump with dynamic shadow scaling |
 | **Square ($\square$)** | Energy Sword Slash combo |
 | **L / R Triggers** | Smooth 360° Orbiting Camera |
 | **Start** | Reset position to center |
+

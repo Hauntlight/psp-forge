@@ -115,50 +115,73 @@ forge_sound_free(sound);
 
 ## 4. Skeletal 3D Models & Animations: glTF / GLB to `.p3d` & `.panm`
 
-The PSP Graphics Engine supports hardware vertex skinning for up to **8 bone matrices** (`GU_WEIGHTS(n)`, `sceGuBoneMatrix(0..7)`). For models with more than 8 bones, PSP-Forge introduces an automated **Mesh Chunking Pipeline** and forward kinematics clip format (`.panm`).
+The PSP Graphics Engine supports hardware vertex skinning for up to **8 bone matrices** (`GU_WEIGHTS(n)`, `sceGuBoneMatrix(0..7)`). For modern 3D models (which typically have 20–80 bones), PSP-Forge introduces an automated **Mesh Chunking Pipeline**, **Material Atlas Fusion**, and a forward kinematics clip format (`.panm`).
 
 | Source Format | Cooked PSP Format | Cooker Module | Optimizations Performed |
 |---|---|---|---|
 | `.gltf`, `.glb` | **`.p3d` (P3D2 Multi-Chunk)** | `cli/cookers/gltf.py` | Triangle clustering into $\le 8$ bone chunks, local bone index remapping, vertex weight normalization |
 | `.gltf`, `.glb` (Animations) | **`.panm`** (Skeletal Animation) | `cli/cookers/gltf.py` | Keyframe baking at 30 FPS, quaternion SLERP, 16-byte fixed samples |
-| Embedded Textures | **`.tex`** (PSP Texture) | `cli/cookers/gltf.py` | Auto-downsampling to $\le 512 \times 512$, block swizzling, POT padding |
+| Embedded Textures | **`.tex`** (PSP Texture) | `cli/cookers/gltf.py` | Material Fusion (atlas packing + UV remapping), auto chroma-keying of neutral background mats, POT padding |
 
 ### Two Architectural Modes Supported:
 1. **Mode A: Hierarchical Rigid Meshes (Tekken 1–3 Style)**:
    - For articulated models without continuous skinning (mechas, segmented armor, robots).
-   - Each limb or section is an independent mesh attached to a bone node.
+   - Each limb or section is an independent mesh attached to a bone node (`node_index >= 0`).
    - Evaluated using `pspgum` matrix stack operations (`sceGumPushMatrix()` / `sceGumPopMatrix()`).
    - Completely bypasses the 8-bone hardware limit since each draw call uses only the active node matrix.
 2. **Mode B: Continuous Skinning with Mesh Chunking**:
-   - For organic, smooth-skinned characters (up to 64 bones total in the skeleton hierarchy).
+   - For organic, smooth-skinned characters (up to **96 bones** total in the skeleton hierarchy).
    - The cooker partitions triangles so that **each sub-mesh chunk references at most 8 unique bones**.
-   - Generates local bone palettes and remaps vertex bone indices (`0..7`).
-   - At runtime, `forge_model3d_draw()` binds the active chunk's skinning matrices to hardware bone registers (`sceGuBoneMatrix`) and dispatches native hardware-blended draw calls (`GU_WEIGHTS(1..8)`).
+   - Generates local bone palettes (`bone_palette[8]`) and remaps vertex bone indices (`0..7`).
+   - At runtime, `forge_model3d_draw()` binds the active chunk's skinning matrices to hardware bone registers (`sceGuBoneMatrix(0..7)`) and dispatches native hardware-blended draw calls (`GU_WEIGHTS(1..8) | GU_WEIGHT_32BITF | GU_TEXTURE_32BITF | GU_NORMAL_32BITF | GU_VERTEX_32BITF | GU_TRANSFORM_3D`).
+
+### Automatic Material Fusion & Chroma Keying:
+Real-world glTF characters frequently come with multiple separate materials (e.g. skin, clothes, eyes, hair). On the PSP:
+- Switching textures per draw call (`sceGuTexImage`) causes heavy pipeline stalls and Display List bloat.
+- The `gltf.py` cooker automatically packs all textures referenced by the model into a single **$512 \times 512$ master texture atlas** (`<model>.tex`), automatically recalculating and remapping the $(U, V)$ coordinates for every vertex.
+- **Auto-Chroma Keying**: When eye or eyebrow textures are painted over a solid neutral matte background (e.g. RGB 128, 128, 128), the cooker automatically detects and converts the background to transparent alpha (`A = 0`), preventing solid opaque boxes from hiding the character's face.
 
 ### Loading and Animating in C:
 ```c
-// 1. Load multi-chunk skinned model and animation clips
+// 1. Load multi-chunk skinned model and shared atlas texture
 ForgeModel3D* model = forge_model3d_load("assets/character.p3d");
-ForgeAnimClip* clip_idle = forge_anim3d_clip_load("assets/character_idle.panm");
-ForgeAnimClip* clip_walk = forge_anim3d_clip_load("assets/character_walk.panm");
+ForgeTexture* tex   = forge_texture_load("assets/character.tex");
+ForgeAnimClip* clip = forge_anim3d_load("assets/character_walk.panm");
 
 // 2. Initialize animator and play animation
 ForgeAnimator anim;
-forge_anim3d_init(&anim, model);
-forge_anim3d_play(&anim, clip_idle, true);
+forge_anim3d_init(&anim);
+forge_anim3d_play(&anim, clip, true);
 
-// 3. Update & render in frame loop
-forge_anim3d_update(&anim, forge_get_delta_time());
-forge_model3d_draw(model, &anim, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, scale);
+// 3. Enable hardware alpha test for eye/hair cutouts
+forge_set_alpha_test(true, 128);
 
-// 4. Smoothly blend into another clip
-forge_anim3d_crossfade(&anim, clip_walk, 0.2f, true);
+// 4. Update & render in frame loop
+forge_anim3d_update(&anim, model, forge_get_delta_time());
+
+// Setup model matrix and draw all chunks
+sceGumPushMatrix();
+{
+    ScePspFVector3 pos = { char_x, char_y, char_z };
+    ScePspFVector3 rot = { 0.0f, facing_angle, 0.0f };
+    sceGumTranslate(&pos);
+    sceGumRotateXYZ(&rot);
+
+    forge_model3d_draw(model, &anim, tex);
+}
+sceGumPopMatrix();
 
 // 5. Cleanup
-forge_anim3d_clip_free(clip_idle);
-forge_anim3d_clip_free(clip_walk);
+forge_anim3d_free(clip);
 forge_model3d_free(model);
+forge_texture_free(tex);
 ```
+
+### Skeletal Model Asset Constraints & Rationale:
+- **Skeleton Limit**: Maximum 96 bones. *Rationale*: `ForgeAnimator` maintains statically sized matrix arrays (`world_matrices[96]`, `skin_matrices[96]`), consuming only $12.5\text{ KiB}$ to keep RAM footprint negligible on the 24 MB PSP.
+- **Max Bones Per Vertex**: At most 4 non-zero weights per vertex in glTF. *Rationale*: Standard glTF attribute `JOINTS_0` / `WEIGHTS_0` supports 4 influences, which the cooker normalizes before assigning to the chunk's 8-bone palette.
+- **Max Unique Bones Per Chunk**: $\le 8$ bones. *Rationale*: The PSP Graphics Engine has exactly 8 hardware bone registers (`GU_WEIGHTS(1..8)`). Any mesh part with more than 8 bones is automatically split into multiple sub-mesh chunks by the cooker.
+
 
 ---
 
