@@ -33,6 +33,7 @@ sudo apt install -y \
   git \
   python3 \
   python3-pip \
+  python3-pil \
   libusb-dev \
   libreadline-dev \
   libmpfr-dev \
@@ -65,6 +66,7 @@ sudo pacman -Syu --needed \
   git \
   python \
   python-pip \
+  python-pillow \
   libusb \
   readline \
   mpfr \
@@ -86,7 +88,7 @@ sudo pacman -Syu --needed \
 ```bash
 sudo dnf groupinstall -y "Development Tools"
 sudo dnf install -y \
-  autoconf automake bison flex cmake git python3 python3-pip \
+  autoconf automake bison flex cmake git python3 python3-pip python3-pillow \
   libusb-devel readline-devel mpfr-devel gmp-devel libmpc-devel \
   libarchive-devel libcurl-devel elfutils-libelf-devel openssl-devel \
   ncurses-devel zlib-devel tcl gettext wget curl texinfo ffmpeg
@@ -140,12 +142,14 @@ Execute the automated build script:
 
 ### How it is Installed
 Modern releases of `psptoolchain` automatically execute `006-pspsdk.sh` as part of `./toolchain.sh`.  
-Upon completion, PSPSDK is placed directly into:
+Upon completion, the toolchain binaries and PSPSDK are installed into:
 ```text
-/usr/local/pspdev/psp/sdk/
-├── include/     # PSPSDK headers
-├── lib/         # User libraries, prxspecs, and linkfile.prx
-└── bin/         # Packaging binaries (pack-pbp, prxgen, mksfoex, psp-cmake)
+/usr/local/pspdev/
+├── bin/             # Cross-compilers & wrappers (psp-gcc, psp-cmake)
+└── psp/sdk/
+    ├── include/     # PSPSDK headers
+    ├── lib/         # User libraries, prxspecs, and linkfile.prx
+    └── bin/         # Packaging binaries (pack-pbp, prxgen, mksfoex)
 ```
 
 *(If you ever need to manually recompile or update PSPSDK alone, you can clone `https://github.com/pspdev/pspsdk.git`, run `./bootstrap && ./configure --with-pspdev=/usr/local/pspdev && make && sudo make install`).*
@@ -196,9 +200,10 @@ PSP-Forge combines:
 3. The **Hardware-Aware Asset Cooker** for converting PNGs to $16 \times 8$ swizzled `.tex` textures, Wavefront OBJs to 16-byte aligned DMA `.p3d` meshes, and audio to 44.1 kHz signed 16-bit PCM `.snd` buffers.
 
 ### A. Install Python Dependencies
-PSP-Forge requires Python 3.10+ and `Pillow`:
+PSP-Forge requires Python 3.11+ (for native `tomllib` support) and `Pillow`:
 ```bash
 pip3 install --user Pillow
+# Or on Debian/Ubuntu: sudo apt install python3-pil
 ```
 
 ### B. Clone PSP-Forge
@@ -219,9 +224,11 @@ From the root of the `psp-forge` repository:
 cd runtime
 psp-cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PSPDEV/psp
 cmake --build build -j$(nproc)
-sudo cmake --install build
+cmake --install build
 cd ..
 ```
+
+*(Note: `sudo` is not needed since `/usr/local/pspdev` was made user-writable in Step 2A. Using `sudo` without `-E` would drop your `$PSPDEV` environment variable).*
 
 ### Alternative Method: Direct `psp-gcc` Compilation
 ```bash
@@ -232,8 +239,8 @@ psp-gcc -Iinclude -I$PSPDEV/psp/include -I$PSPDEV/psp/sdk/include \
   -c src/*.c
 psp-ar rcs libpspforge.a *.o
 
-sudo cp include/psp_forge.h $PSPDEV/psp/include/psp_forge.h
-sudo cp libpspforge.a $PSPDEV/psp/lib/libpspforge.a
+cp include/psp_forge.h $PSPDEV/psp/include/psp_forge.h
+cp libpspforge.a $PSPDEV/psp/lib/libpspforge.a
 rm -f *.o libpspforge.a
 cd ..
 ```
@@ -311,14 +318,14 @@ psp-forge run
 Every project built with PSP-Forge compiles in pure User Mode (`BUILD_PRX`) without kernel dependencies, guaranteeing stability on Custom Firmware (e.g., 6.61 PRO-C or ME):
 
 1. Connect your PSP via USB or insert your Memory Stick Duo into your computer.
-2. Copy the project folder containing `EBOOT.PBP` and its `assets/` directory to:
+2. Copy `build/EBOOT.PBP` and the cooked assets from `build/assets/` to your game directory on the Memory Stick:
    ```text
    ms0:/PSP/GAME/my_first_game/
-   ├── EBOOT.PBP
-   └── assets/
-       ├── icon0.png
-       ├── pic1.png
+   ├── EBOOT.PBP        (copied from build/EBOOT.PBP)
+   └── assets/          (copied from build/assets/)
        ├── hero.tex
-       └── coin.snd
+       ├── coin.snd
+       ├── icon0.png    (optional XMB icon)
+       └── pic1.png     (optional XMB background)
    ```
 3. Safely disconnect USB and launch your game from the PSP XMB menu under **Game → Memory Stick**!

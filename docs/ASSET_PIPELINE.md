@@ -23,7 +23,7 @@ In standard linear images, pixels are stored row by row from left to right. When
 **Swizzling** reorganizes the byte sequence into rectangular blocks of **$16 \times 8$ bytes**: pixels that are close together in 2D space become contiguous in physical memory, dramatically improving texture cache hit rate.
 
 ### How Conversion Works:
-1. **Power-of-Two (POT) Dimensions**: The PSP requires texture dimensions to be powers of two ($16, 32, 64, 128, 256, 512$). The cooker calculates the next power of two and applies transparent zero-padding automatically.
+1. **Power-of-Two (POT) Dimensions**: The PSP requires texture dimensions to be powers of two ($8, 16, 32, 64, 128, 256, 512$; note that `clut4` requires a minimum width of 32 for block alignment). The cooker calculates the next power of two and applies transparent zero-padding automatically.
 2. **Supported Pixel Storage Modes (PSM)**:
    - `8888` / `rgba8888` (`GU_PSM_8888 = 3`): 32-bit RGBA (maximum fidelity).
    - `5551` / `rgba5551` (`GU_PSM_5551 = 1`): 16-bit RGBA (1-bit alpha on/off).
@@ -37,18 +37,15 @@ In standard linear images, pixels are stored row by row from left to right. When
 # Cook all project assets:
 psp-forge cook
 
-# Or cook a single image:
-python3 -c "
-from cli.cookers.texture import cook_texture
-cook_texture('assets/hero.png', 'build/assets/hero.tex', format_type='8888', swizzle=True)
-"
+# Or cook individual assets via the CLI
+psp-forge cook
 ```
 
 ### Loading and Rendering in C:
 ```c
 ForgeTexture* tex = forge_texture_load("assets/hero.tex");
 
-// Immediate 2D quad drawing (pixel coordinates):
+// Immediate 2D quad drawing (texel pixel coordinates):
 forge_draw_sprite(tex, screen_x, screen_y, width, height, tex_u, tex_v, tex_w, tex_h);
 
 // Cleanup on shutdown:
@@ -65,25 +62,17 @@ Texture (U, V) -> Color -> Normals (NX, NY, NZ) -> Position (X, Y, Z)
 
 The `mesh.py` cooker:
 1. Reads vertex positions `v`, texture coordinates `vt`, and surface normals `vn`.
-2. Computes smooth face normals via cross products if the model lacks normals.
+2. Computes face normals via triangle cross products if the model lacks normals (flat shading).
 3. Flips the vertical UV axis ($1.0 - V$) to align with the GE standard.
 4. Triangulates faces (quads and N-gons) using triangle fans.
 5. Computes the **AABB Bounding Box** (`aabb_min`, `aabb_max`, bounding center, and culling radius).
-6. Writes packed vertices with a 32-byte stride, strictly aligned to 16 bytes for hardware DMA.
+6. Writes packed vertices with a 32-byte stride (aligned to 16 bytes for hardware DMA when loaded into RAM via `forge_mesh_load`).
 
 ### Exporting from Blender / Maya:
 When exporting `.obj` from Blender:
 - Select **Triangulate Faces** (or let the cooker triangulate automatically).
 - Check **Write Normals** and **Include UVs**.
 - Coordinate axes: Forward `-Z`, Up `+Y`.
-
-### Command-Line Usage:
-```bash
-python3 -c "
-from cli.cookers.mesh import cook_mesh
-cook_mesh('assets/track.obj', 'build/assets/track.p3d')
-"
-```
 
 ### Loading and Rendering in C:
 ```c
@@ -102,13 +91,14 @@ forge_mesh_free(mesh);
 ## 3. Audio: From WAV / MP3 / OGG to `.snd`
 
 ### Hardware Audio Constraints:
-The PSP audio hardware operates on **44.1 kHz signed 16-bit PCM** with buffers that must be multiples of **64 samples**.
+The PSP audio hardware operates on **44.1 kHz stereo signed 16-bit PCM** with buffers that must be multiples of **64 samples**.
 
 The `audio.py` cooker:
 - Supports uncompressed `.wav` files natively.
 - Supports `.mp3`, `.ogg`, `.flac`, `.m4a` when `ffmpeg` is available on the system.
+- Converts audio to 2-channel stereo (duplicating mono channels) for hardware compatibility.
 - Applies linear interpolation resampling if the source rate differs from 44100 Hz.
-- Normalizes and aligns final sample length to the nearest multiple of 64 samples with zero padding (silence).
+- Rounds total sample count up to the next multiple of 64 samples and pads with silence.
 
 ### Loading and Playing in C:
 ```c

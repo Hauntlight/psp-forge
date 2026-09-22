@@ -30,9 +30,9 @@ my_3d_runner/
 ## 2. Preparing 3D Models (`track.obj`) and Textures
 
 ### A. Track Geometry (`track.obj`)
-The model represents a rectangular track section centered at the origin, 6 units long along the $Z$ axis (from $-3.0$ to $+3.0$) and 4 units wide along the $X$ axis (from $-2.0$ to $+2.0$).
+In the template, `assets/track.obj` is an extruded 3D slab with 8 vertices and 12 triangles centered at the origin, extending 6 units along the $Z$ axis ($-3.0$ to $+3.0$), 4 units wide along $X$ ($-2.0$ to $+2.0$), with a thickness extending down to $Y = -0.5$.
 
-Synthetic example of `assets/track.obj`:
+Below is a minimal synthetic quad example representing the upper surface:
 ```obj
 # Vertices (X, Y, Z)
 v -2.0  0.0 -3.0
@@ -136,6 +136,9 @@ int main(int argc, char* argv[]) {
     forge_set_light(0,  0.0f, 4.0f, -2.0f, 0xFFFFFFFF, 2.5f);
     forge_set_light(1,  3.0f, 1.5f,  4.0f, 0xFF80C0FF, 1.8f);
 
+    // Global scene ambient — ensures mesh is never pitch black
+    sceGuAmbient(0xFF303030);
+
     // Player state
     int   target_lane = 0; // -1: Left, 0: Center, 1: Right
     float player_x    = 0.0f;
@@ -185,17 +188,22 @@ int main(int argc, char* argv[]) {
         }
 
         // Endless track segment scrolling and recycling
-        float total_track_span = NUM_TRACK_SEGMENTS * SEGMENT_LENGTH;
+        float total_span = NUM_TRACK_SEGMENTS * SEGMENT_LENGTH;
         for (int i = 0; i < NUM_TRACK_SEGMENTS; ++i) {
             segment_z[i] -= scroll_speed * dt;
             if (segment_z[i] < -SEGMENT_LENGTH) {
-                segment_z[i] += total_track_span;
+                segment_z[i] += total_span;
             }
         }
 
         // Begin recording GPU commands
         forge_begin_frame();
         forge_clear(0xFF1B140E); // Dark midnight sky
+        if (!track_mesh) {
+            forge_clear(0xFF0000FF); // RED: mesh failed to load
+        } else if (!track_tex) {
+            forge_clear(0xFF00FFFF); // YELLOW: texture failed to load
+        }
 
         // 4. Configure perspective camera following the player
         // (x_eye, y_eye, z_eye, x_target, y_target, z_target, fov_degrees)
@@ -212,7 +220,7 @@ int main(int argc, char* argv[]) {
                     track_mesh,
                     track_tex,
                     0.0f, 0.0f, segment_z[i], // Position
-                    0.0f, 0.0f, 0.0f,         // Rotation
+                    0.0f, 0.0f, 0.0f,         // Rotation (radians)
                     1.0f, 1.0f, 1.0f          // Scale
                 );
             }
@@ -225,13 +233,14 @@ int main(int argc, char* argv[]) {
             if (bar_w < 2.0f)  bar_w = 2.0f;
 
             typedef struct { float x, y, z; } HudVtx;
-            sceGuDisable(GU_DEPTH_TEST);
 
             HudVtx* bg = (HudVtx*)sceGuGetMemory(2 * sizeof(HudVtx));
             if (bg) {
                 bg[0].x = 396.0f; bg[0].y = 2.0f;  bg[0].z = 0.0f;
                 bg[1].x = 478.0f; bg[1].y = 10.0f; bg[1].z = 0.0f;
                 sceGuDisable(GU_TEXTURE_2D);
+                sceGuDisable(GU_LIGHTING);
+                sceGuDisable(GU_DEPTH_TEST);
                 sceGuColor(0xFF333333);
                 sceGuDrawArray(GU_SPRITES, GU_VERTEX_32BITF | GU_TRANSFORM_2D, 2, NULL, bg);
             }

@@ -34,7 +34,7 @@ typedef struct ForgeScene ForgeScene;
 typedef void (*ForgeSceneCallback)(ForgeScene* scene, float dt);
 
 struct ForgeScene {
-    const char*        name;        // Scene identifier
+    const char*        name;        // Scene identifier (e.g. "TitleScene")
     void*              user_data;   // Pointer to optional custom data
     ForgeSceneCallback on_init;     // Called on scene transition (resource loading)
     ForgeSceneCallback on_update;   // Called every frame for logic and physics
@@ -46,81 +46,175 @@ struct ForgeScene {
 void        forge_scene_set(ForgeScene* scene);
 ForgeScene* forge_scene_get_current(void);
 void        forge_scene_update_and_draw(float dt);
+void        forge_scene_reset(void);
 ```
 
 ---
 
 ## 3. Implementing Two Scenes: Menu & Gameplay
 
-### A. Defining Scene 1: Title / Menu
+Here is the complete implementation based on `demos/demo_scenes/src/main.c`.
+
+### A. Scene Declarations & Shared State
+
 ```c
+#include <psp_forge.h>
+#include <stdio.h>
+
+PSP_MODULE_INFO("DEMO_SCENES", 0, 1, 0);
+PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
+
+/* Forward declarations of scenes */
+static ForgeScene g_title_scene;
+static ForgeScene g_game_scene;
+
+/* Global sound effect */
+static ForgeSound* g_click_snd = NULL;
+```
+
+### B. Defining Scene 1: Title / Menu
+
+```c
+typedef struct {
+    ForgeTexture* banner_tex;
+    float         blink_timer;
+} TitleSceneData;
+
+static TitleSceneData s_title_data;
+
 static void title_init(ForgeScene* scene, float dt) {
-    s_banner = forge_texture_load("assets/menu_banner.tex");
+    (void)scene; (void)dt;
+    s_title_data.banner_tex  = forge_texture_load("assets/menu_banner.tex");
+    s_title_data.blink_timer = 0.0f;
 }
 
 static void title_update(ForgeScene* scene, float dt) {
+    (void)scene;
+    s_title_data.blink_timer += dt;
+
     ForgeInput in;
     forge_input_poll(&in);
 
-    // On START button press, switch to the gameplay scene!
-    if (forge_input_is_pressed(&in, PSP_CTRL_START)) {
-        forge_sound_play(g_click_snd, 0);
+    // On START or CROSS press, transition to the gameplay scene!
+    if (forge_input_is_pressed(&in, PSP_CTRL_START) || forge_input_is_pressed(&in, PSP_CTRL_CROSS)) {
+        if (g_click_snd) forge_sound_play(g_click_snd, 0);
         forge_scene_set(&g_game_scene);
     }
 }
 
 static void title_draw(ForgeScene* scene, float dt) {
-    forge_clear(0xFF1B1015);
-    if (s_banner) {
-        forge_draw_sprite(s_banner, 112.0f, 50.0f, 256.0f, 64.0f, 0, 0, 256, 64);
+    (void)scene; (void)dt;
+    forge_clear(0xFF1B1015); // Deep royal purple
+
+    if (s_title_data.banner_tex) {
+        forge_draw_sprite(
+            s_title_data.banner_tex,
+            (FORGE_SCREEN_WIDTH - 256.0f) / 2.0f, 50.0f,
+            256.0f, 64.0f,
+            0.0f, 0.0f, 256.0f, 64.0f
+        );
     }
 }
 
 static void title_destroy(ForgeScene* scene, float dt) {
+    (void)scene; (void)dt;
     // Strict graphics memory release
-    if (s_banner) {
-        forge_texture_free(s_banner);
-        s_banner = NULL;
+    if (s_title_data.banner_tex) {
+        forge_texture_free(s_title_data.banner_tex);
+        s_title_data.banner_tex = NULL;
     }
 }
 ```
 
-### B. Defining Scene 2: Gameplay
+### C. Defining Scene 2: Gameplay
+
 ```c
+typedef struct {
+    ForgeTexture* player_tex;
+    float         player_x;
+    float         player_y;
+    float         play_time;
+} GameSceneData;
+
+static GameSceneData s_game_data;
+
 static void game_init(ForgeScene* scene, float dt) {
-    s_player_tex = forge_texture_load("assets/player.tex");
+    (void)scene; (void)dt;
+    s_game_data.player_tex = forge_texture_load("assets/player.tex");
+    s_game_data.player_x   = (FORGE_SCREEN_WIDTH - 32.0f) / 2.0f;
+    s_game_data.player_y   = (FORGE_SCREEN_HEIGHT - 32.0f) / 2.0f;
+    s_game_data.play_time  = 0.0f;
 }
 
 static void game_update(ForgeScene* scene, float dt) {
+    (void)scene;
+    s_game_data.play_time += dt;
+
     ForgeInput in;
     forge_input_poll(&in);
 
-    // Press SELECT to return to the main menu
-    if (forge_input_is_pressed(&in, PSP_CTRL_SELECT)) {
+    float speed = 150.0f;
+    if (forge_input_is_held(&in, PSP_CTRL_LEFT)  || in.analog_x < -0.2f) s_game_data.player_x -= speed * dt;
+    if (forge_input_is_held(&in, PSP_CTRL_RIGHT) || in.analog_x >  0.2f) s_game_data.player_x += speed * dt;
+    if (forge_input_is_held(&in, PSP_CTRL_UP)    || in.analog_y < -0.2f) s_game_data.player_y -= speed * dt;
+    if (forge_input_is_held(&in, PSP_CTRL_DOWN)  || in.analog_y >  0.2f) s_game_data.player_y += speed * dt;
+
+    // Screen boundary clamping
+    if (s_game_data.player_x < 0.0f) s_game_data.player_x = 0.0f;
+    if (s_game_data.player_x > FORGE_SCREEN_WIDTH - 32.0f) s_game_data.player_x = FORGE_SCREEN_WIDTH - 32.0f;
+    if (s_game_data.player_y < 0.0f) s_game_data.player_y = 0.0f;
+    if (s_game_data.player_y > FORGE_SCREEN_HEIGHT - 32.0f) s_game_data.player_y = FORGE_SCREEN_HEIGHT - 32.0f;
+
+    // Press SELECT or TRIANGLE to return to title menu
+    if (forge_input_is_pressed(&in, PSP_CTRL_SELECT) || forge_input_is_pressed(&in, PSP_CTRL_TRIANGLE)) {
+        if (g_click_snd) forge_sound_play(g_click_snd, 0);
         forge_scene_set(&g_title_scene);
     }
 }
 
+static void game_draw(ForgeScene* scene, float dt) {
+    (void)scene; (void)dt;
+    forge_clear(0xFF102518); // Dark teal gameplay arena
+
+    if (s_game_data.player_tex) {
+        forge_draw_sprite(
+            s_game_data.player_tex,
+            s_game_data.player_x, s_game_data.player_y,
+            32.0f, 32.0f,
+            0.0f, 0.0f, 32.0f, 32.0f
+        );
+    }
+}
+
 static void game_destroy(ForgeScene* scene, float dt) {
-    if (s_player_tex) {
-        forge_texture_free(s_player_tex);
-        s_player_tex = NULL;
+    (void)scene; (void)dt;
+    if (s_game_data.player_tex) {
+        forge_texture_free(s_game_data.player_tex);
+        s_game_data.player_tex = NULL;
     }
 }
 ```
 
-### C. Unified Game Loop in `main()`
-The main loop does not need to worry about which scene is active:
+### D. Unified Game Loop in `main()`
+
 ```c
 int main(int argc, char* argv[]) {
+    if (argc > 0 && argv && argv[0]) {
+        forge_set_base_path(argv[0]);
+    }
+
     forge_init(0);
 
+    g_click_snd = forge_sound_load("assets/click.snd");
+
     // Configure scene definitions
+    g_title_scene.name       = "TitleScene";
     g_title_scene.on_init    = title_init;
     g_title_scene.on_update  = title_update;
     g_title_scene.on_draw    = title_draw;
     g_title_scene.on_destroy = title_destroy;
 
+    g_game_scene.name       = "GameScene";
     g_game_scene.on_init     = game_init;
     g_game_scene.on_update   = game_update;
     g_game_scene.on_draw     = game_draw;
@@ -138,7 +232,15 @@ int main(int argc, char* argv[]) {
         forge_end_frame();
     }
 
+    // Destroy active scene on shutdown
+    ForgeScene* cur = forge_scene_get_current();
+    if (cur && cur->on_destroy) {
+        cur->on_destroy(cur, 0.0f);
+    }
+
+    if (g_click_snd) forge_sound_free(g_click_snd);
     forge_shutdown();
+    sceKernelExitGame();
     return 0;
 }
 ```

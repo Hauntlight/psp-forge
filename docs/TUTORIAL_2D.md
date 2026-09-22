@@ -11,12 +11,12 @@ This tutorial walks through creating a full interactive 2D demo step-by-step, ex
 
 ## 1. Project Structure
 
-A 2D project has the following essential layout:
+A 2D project has the following essential layout (scaffolded with `psp-forge init my_2d_game --template 2d`):
 
 ```text
 my_2d_game/
 ├── CMakeLists.txt     # Build configuration with create_pbp_file and BUILD_PRX
-├── psp.toml           # Project metadata for CLI
+├── psp.toml           # Project metadata and asset cooker configuration
 ├── assets/            # Source media files (PNG, WAV)
 │   ├── hero.png       # Main character sprite
 │   ├── coin.wav       # Jump/interaction sound effect
@@ -24,6 +24,18 @@ my_2d_game/
 │   └── pic1.png       # XMB background (480x272 PNG)
 └── src/
     └── main.c         # C99 source code
+```
+
+### The `psp.toml` Configuration File
+```toml
+[project]
+name = "psp_2d_game"
+title = "PSP 2D Starter"
+version = "0.1.0"
+
+[assets]
+source_dir = "assets"
+output_dir = "build/assets"
 ```
 
 ---
@@ -39,14 +51,19 @@ my_2d_game/
 1. Save an audio file in 16-bit signed PCM WAV format (Mono or Stereo at 44100 Hz).
 2. Save it as `assets/coin.wav`.
 
-### C. Cooking Assets with `psp-forge cook`
+### C. Menu Artwork (`icon0.png` & `pic1.png`)
+1. `icon0.png`: $144 \times 80$ PNG image displayed as the game title icon in the PSP XMB menu.
+2. `pic1.png`: $480 \times 272$ PNG image displayed as the full-screen background artwork in the XMB menu.
+
+### D. Cooking Assets with `psp-forge cook`
 When you run:
 ```bash
 psp-forge cook
 ```
-The cooker automatically outputs into `build/assets/`:
+*(Note: `psp-forge build` also invokes `psp-forge cook` automatically).*
+The cooker converts assets into optimized binary files in `build/assets/`:
 - `hero.tex`: Swizzled texture in $16 \times 8$ byte hardware blocks using `GU_PSM_8888`.
-- `coin.snd`: 16-bit signed raw PCM audio buffer aligned to 64-sample increments.
+- `coin.snd`: 44.1 kHz 16-bit signed PCM in a custom 32-byte `PSND` binary container aligned to 64-sample increments.
 
 ---
 
@@ -91,11 +108,12 @@ create_pbp_file(
 
 ## 4. C99 Source Code (`src/main.c`)
 
-Here is the complete implementation with texture loading, differential input, and an on-screen FPS indicator:
+Here is the complete implementation with texture loading, differential input, animated background, and an on-screen FPS indicator:
 
 ```c
 #include <psp_forge.h>
 #include <stdio.h>
+#include <string.h>
 
 PSP_MODULE_INFO("PSP_2D_GAME", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -117,6 +135,7 @@ int main(int argc, char* argv[]) {
     float hero_x = (FORGE_SCREEN_WIDTH  / 2.0f) - 16.0f;
     float hero_y = (FORGE_SCREEN_HEIGHT / 2.0f) - 16.0f;
     float speed  = 160.0f; /* pixels per second */
+    float time_acc = 0.0f;
 
     ForgeInput input;
 
@@ -125,6 +144,7 @@ int main(int argc, char* argv[]) {
         forge_input_poll(&input);
         float dt  = forge_get_delta_time();
         float fps = forge_get_fps();
+        time_acc += dt;
 
         // Movement via D-Pad or Analog Stick
         if (forge_input_is_held(&input, PSP_CTRL_LEFT)  || input.analog_x < -0.2f) hero_x -= speed * dt;
@@ -133,9 +153,9 @@ int main(int argc, char* argv[]) {
         if (forge_input_is_held(&input, PSP_CTRL_DOWN)  || input.analog_y >  0.2f) hero_y += speed * dt;
 
         // Screen boundaries (480x272)
-        if (hero_x < 0.0f) hero_x = 0.0f;
-        if (hero_x > (FORGE_SCREEN_WIDTH - 32.0f)) hero_x = FORGE_SCREEN_WIDTH - 32.0f;
-        if (hero_y < 0.0f) hero_y = 0.0f;
+        if (hero_x < 0.0f)                          hero_x = 0.0f;
+        if (hero_x > (FORGE_SCREEN_WIDTH  - 32.0f)) hero_x = FORGE_SCREEN_WIDTH  - 32.0f;
+        if (hero_y < 0.0f)                          hero_y = 0.0f;
         if (hero_y > (FORGE_SCREEN_HEIGHT - 32.0f)) hero_y = FORGE_SCREEN_HEIGHT - 32.0f;
 
         // Press Cross button to trigger sound effect
@@ -143,16 +163,23 @@ int main(int argc, char* argv[]) {
             if (coin_snd) forge_sound_play(coin_snd, 0);
         }
 
+        // Animated background: slow color drift
+        float t   = time_acc * 0.4f;
+        float frac = t - (int)t;
+        int   r_bg = (int)(18.0f + 12.0f * frac);
+        int   g_bg = (int)(28.0f + 10.0f * frac);
+        uint32_t bg = 0xFF000000 | (r_bg & 0xFF) | ((g_bg & 0xFF) << 8) | (0x38 << 16);
+
         // 5. Begin frame rendering
         forge_begin_frame();
-        forge_clear(0xFF2E1C12); /* Dark slate background */
+        forge_clear(bg);
 
-        // Render 2D textured sprite
+        // Render 2D textured sprite using pixel texel coordinates
         if (hero_tex) {
             forge_draw_sprite(
                 hero_tex,
-                hero_x, hero_y, 32.0f, 32.0f, // Screen destination position and size
-                0.0f, 0.0f, 32.0f, 32.0f      // Source UV coordinates
+                hero_x, hero_y, 32.0f, 32.0f, // Screen destination (x, y, w, h)
+                0.0f, 0.0f, (float)hero_tex->width, (float)hero_tex->height // Source texel crop
             );
         }
 
@@ -163,13 +190,13 @@ int main(int argc, char* argv[]) {
             if (bar_w < 2.0f)  bar_w = 2.0f;
 
             typedef struct { float x, y, z; } HudVtx;
-            HudVtx* bg = (HudVtx*)sceGuGetMemory(2 * sizeof(HudVtx));
-            if (bg) {
-                bg[0].x = 396.0f; bg[0].y = 2.0f;  bg[0].z = 0.0f;
-                bg[1].x = 478.0f; bg[1].y = 10.0f; bg[1].z = 0.0f;
+            HudVtx* bg_bar = (HudVtx*)sceGuGetMemory(2 * sizeof(HudVtx));
+            if (bg_bar) {
+                bg_bar[0].x = 396.0f; bg_bar[0].y = 2.0f;  bg_bar[0].z = 0.0f;
+                bg_bar[1].x = 478.0f; bg_bar[1].y = 10.0f; bg_bar[1].z = 0.0f;
                 sceGuDisable(GU_TEXTURE_2D);
                 sceGuColor(0xFF333333);
-                sceGuDrawArray(GU_SPRITES, GU_VERTEX_32BITF | GU_TRANSFORM_2D, 2, NULL, bg);
+                sceGuDrawArray(GU_SPRITES, GU_VERTEX_32BITF | GU_TRANSFORM_2D, 2, NULL, bg_bar);
             }
             HudVtx* bar = (HudVtx*)sceGuGetMemory(2 * sizeof(HudVtx));
             if (bar) {

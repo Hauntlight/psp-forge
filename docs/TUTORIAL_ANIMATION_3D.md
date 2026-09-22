@@ -10,13 +10,13 @@ Two complete showcase demos are included in PSP-Forge:
 
 ## 1. Why Hierarchical & Procedural Animation on PSP?
 
-The Sony PSP features a Vector Floating Point Unit (VFPU) and a dedicated Graphics Engine (GE) with a hardware $4 \times 4$ transformation matrix stack (`pspgum`).
+The Sony PSP features a Vector Floating Point Unit (VFPU) and a dedicated Graphics Engine (GE) coupled with the `pspgum` transformation matrix stack library.
 
 Processing skeletal deformation with per-vertex weights on the CPU (*software vertex skinning*) requires multiplying dozens of matrices for thousands of vertices every frame. On the PSP's 333 MHz MIPS R4000-based CPU with limited cache lines, this causes severe frame drops.
 
 Commercial PSP titles (and classic PS1/N64 era games) solve this elegantly with two techniques:
 1. **Procedural Transforms**: Harmonic sinusoidal functions ($\sin$, $\cos$) for bobbing, rolling, floating, and breathing.
-2. **Hierarchical Matrix Cascades**: Splitting a character into modular rigid meshes (torso, head, upper arm, forearm, thigh, shin, weapon) connected via nested `sceGumPushMatrix()` and `sceGumPopMatrix()` calls. The PSP's hardware transformation engine does the matrix multiplication natively in eDRAM pipelines!
+2. **Hierarchical Matrix Cascades**: Splitting a character into modular rigid meshes (torso, head, upper arm, forearm, thigh, shin, weapon) connected via nested `sceGumPushMatrix()` and `sceGumPopMatrix()` calls. The PSP's Allegrex VFPU performs rapid matrix multiplications in hardware vector registers, while the Graphics Engine transforms vertex coordinates by uploaded modelview matrices during hardware rendering!
 
 ---
 
@@ -45,14 +45,14 @@ float gem_bob_y = sinf(time_acc * 2.5f) * 0.35f;
 float gem_rot_y = time_acc * 2.0f;
 float gem_tilt  = cosf(time_acc * 1.5f) * 0.15f;
 
-// 2. Setup orbiting camera
+// 2. Setup camera orbit
 float cam_x = sinf(cam_angle) * cam_dist;
 float cam_z = -cosf(cam_angle) * cam_dist;
-forge_set_camera(cam_x, cam_height, cam_z, 0.0f, 0.0f, 0.0f, 60.0f);
 
-// 3. Render base and animated crystal
+// 3. Render base and animated crystal inside display list
 forge_begin_frame();
 forge_clear(0xFF140F0A);
+forge_set_camera(cam_x, cam_height, cam_z, 0.0f, 0.0f, 0.0f, 60.0f);
 
 forge_draw_mesh(ped_mesh, ped_tex, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
 forge_draw_mesh(gem_mesh, gem_tex,
@@ -80,7 +80,7 @@ To allow limbs to rotate naturally around joints (shoulders, elbows, hips, knees
 
 | Mesh Asset | Description | Pivot Position |
 |---|---|---|
-| `torso.obj` | Chest and spine | Center of chest $(0, 0, 0)$ |
+| `torso.obj` | Chest and spine | Base of waist / hips $(0, 0, 0)$ extending up to $Y = 0.85$ |
 | `head.obj` | Helmet with glowing visor | Base of neck $(0, 0, 0)$ |
 | `limb.obj` | Articulated capsule / beveled segment | Top joint $(0, 0, 0)$ extending downward along $-Y$ |
 | `sword.obj` | Energy blade and crossguard | Center of the hilt |
@@ -88,87 +88,88 @@ To allow limbs to rotate naturally around joints (shoulders, elbows, hips, knees
 | `shadow_disc.obj` | Ground contact shadow polygon | Center of the ground contact |
 
 > [!TIP]
-> **Reusing Meshes**: The single `limb.obj` asset is reused for all 8 limb segments: Left/Right Upper Arms, Left/Right Forearms, Left/Right Thighs, and Left/Right Shins. Different joint proportions are created simply by passing different scale factors (`sx, sy, sz`) into `forge_draw_mesh_node()`.
+> **Reusing Meshes**: The single `limb.obj` asset is reused for all 8 limb segments: Left/Right Upper Arms, Left/Right Forearms, Left/Right Thighs, and Left/Right Shins. Different joint proportions are created simply by passing different scale factors (`sx, sy, sz`).
 
 ### B. Texture Budgeting
 - `knight_bot.png` ($256 \times 256$, 256 KB): UV atlas for armor, visor, and sword.
 - `arena.png` ($128 \times 128$, 64 KB): Radial stone pattern with glowing cyan circuit runes.
-- `shadow.png` ($32 \times 32$, 4 KB): Soft radial alpha vignette.
-Total texture memory: ~324 KB, staying comfortably inside the 688 KiB eDRAM texture scratchpad!
+- `shadow.png` ($64 \times 64$, 16 KB): Soft radial alpha vignette.
+Total texture memory: ~336 KB loaded in RAM, well within the PSP's memory footprint! (Can also be loaded directly to the 688 KiB eDRAM texture scratchpad via `forge_texture_load_vram`).
 
 ---
 
 ## 4. The Hierarchical Matrix Tree
-
+ 
 By chaining matrix transformations, child nodes automatically inherit the world position, rotation, and jump height of their parents:
 
 ```text
 World Space
  ├── Arena Floor (static at 0, 0, 0)
- └── Knight Root (Pos X, Jump Y, Pos Z, Facing Yaw)
-      ├── Contact Shadow Disc (clamped at Y = 0.02, scale shrinks on jump)
+ ├── Contact Shadow Disc (world-space at Y = 0.015, dynamic scale based on jump height)
+ └── Knight Root (Pos X, Jump Y, Pos Z, Facing Angle)
       └── Torso (breathing Y bob + forward lean during run)
-           ├── Head (neck offset + look angle)
+           ├── Head (neck offset Y = 0.85 + head pitch)
            ├── Left Shoulder -> Left Upper Arm -> Left Forearm
            ├── Right Shoulder -> Right Upper Arm -> Right Forearm -> Hand (Sword)
            ├── Left Hip -> Left Thigh -> Left Shin
            └── Right Hip -> Right Thigh -> Right Shin
 ```
 
-### C99 Hierarchical Drawing API
-`libpspforge` provides two dedicated functions for hierarchical rendering:
-1. `forge_draw_mesh_current(mesh, tex)`: Draws a mesh using the current transformation on the Gum matrix stack without resetting it.
-2. `forge_draw_mesh_node(...)`: Pushes a new matrix, applies local translation/rotation/scaling, renders the mesh, and pops back to the parent frame:
+### C99 Hierarchical Drawing Implementation
+In `demo_anim_3d_v2`, the articulated humanoid is drawn using `forge_draw_mesh_current()` alongside `pspgum` matrix operations:
 
 ```c
-// Example: Attaching Head and Left Arm to Torso
+// Example: Attaching Head and Left Arm to Torso (from demos/demo_anim_3d_v2/src/main.c)
 sceGumPushMatrix();
 {
-    // 1. Move to Character Root and apply facing rotation
+    // 1. Move to Character Root and apply facing yaw
     ScePspFVector3 root_pos = { char_x, char_y, char_z };
-    ScePspFVector3 root_rot = { 0.0f, char_yaw, 0.0f };
+    ScePspFVector3 root_rot = { 0.0f, facing_angle, 0.0f };
     sceGumTranslate(&root_pos);
     sceGumRotateXYZ(&root_rot);
 
     // 2. Draw Torso (with subtle breathing oscillation)
     sceGumPushMatrix();
     {
-        ScePspFVector3 torso_pos = { 0.0f, 1.15f + idle_bob, 0.0f };
-        ScePspFVector3 torso_rot = { run_lean, 0.0f, 0.0f };
+        ScePspFVector3 torso_pos = { 0.0f, torso_bob_y, 0.0f };
+        ScePspFVector3 torso_rot = { torso_pitch, 0.0f, 0.0f };
         sceGumTranslate(&torso_pos);
         sceGumRotateXYZ(&torso_rot);
 
-        // Draw chest mesh
+        // Draw chest mesh at current matrix
         forge_draw_mesh_current(torso_mesh, bot_tex);
 
-        // Child: Head (relative to Torso)
-        forge_draw_mesh_node(head_mesh, bot_tex,
-            0.0f, 0.38f, 0.0f,    // neck offset
-            0.0f, head_yaw, 0.0f, // look angle
-            0.85f, 0.85f, 0.85f
-        );
-
-        // Child: Left Upper Arm
+        // Child: Head (attached at neck Y = 0.85)
         sceGumPushMatrix();
         {
-            ScePspFVector3 l_shldr = { -0.36f, 0.22f, 0.0f };
-            ScePspFVector3 l_arm_rot = { l_arm_pitch, 0.0f, 0.1f };
-            sceGumTranslate(&l_shldr);
-            sceGumRotateXYZ(&l_arm_rot);
-
-            // Draw upper arm
-            forge_draw_mesh_node(limb_mesh, bot_tex, 0, 0, 0, 0, 0, 0, 0.7f, 0.7f, 0.7f);
-
-            // Grandchild: Left Forearm (relative to elbow)
-            forge_draw_mesh_node(limb_mesh, bot_tex,
-                0.0f, -0.32f, 0.0f,  // elbow offset
-                l_forearm_pitch, 0, 0,
-                0.6f, 0.65f, 0.6f
-            );
+            ScePspFVector3 head_off = { 0.0f, 0.85f, 0.0f };
+            sceGumTranslate(&head_off);
+            sceGumRotateX(head_pitch);
+            forge_draw_mesh_current(head_mesh, bot_tex);
         }
         sceGumPopMatrix();
 
-        // (Draw Right Arm + Sword, Left Leg, Right Leg...)
+        // Child: Left Arm (shoulder attached at X = -0.42, Y = 0.75)
+        sceGumPushMatrix();
+        {
+            ScePspFVector3 l_shldr = { -0.42f, 0.75f, 0.0f };
+            sceGumTranslate(&l_shldr);
+            sceGumRotateX(l_arm_swing);
+
+            // Upper arm
+            ScePspFVector3 arm_scale = { 0.85f, 0.75f, 0.85f };
+            sceGumScale(&arm_scale);
+            forge_draw_mesh_current(limb_mesh, bot_tex);
+
+            // Forearm (elbow joint at Y = -0.52)
+            ScePspFVector3 elbow_off = { 0.0f, -0.52f, 0.0f };
+            sceGumTranslate(&elbow_off);
+            sceGumRotateX(l_forearm_rx);
+            forge_draw_mesh_current(limb_mesh, bot_tex);
+        }
+        sceGumPopMatrix();
+
+        // (Similar hierarchical branches for Right Arm + Sword, Left Leg, Right Leg...)
     }
     sceGumPopMatrix();
 }
@@ -179,31 +180,33 @@ sceGumPopMatrix();
 
 ## 5. Locomotion State Machine
 
-`demo_anim_3d_v2` includes a complete 4-state locomotion controller:
+`demo_anim_3d_v2` includes an interactive locomotion controller:
 
 ### A. Idle State
-- **Breathing**: Sinusoidal chest bobbing $Y = \sin(t \cdot 3.0) \cdot 0.025$.
-- **Arm Rest**: Arms hang relaxed at sides with gentle counter-oscillation.
+- **Breathing**: Sinusoidal chest bobbing:
+  $$\text{torso\_bob\_y} = \sin(\text{phase}) \cdot 0.035\text{ m}, \quad \text{where } \text{phase} \mathrel{+}= dt \cdot 2.5$$
+- **Arm Rest**: Arms hang relaxed with subtle breathing counter-motion.
 
 ### B. Walk / Run Gait
 - **Leg Swing (Forward Kinematics)**:
-  $$\theta_{\text{thigh\_left}} = \sin(\text{walk\_phase}) \cdot 0.55\text{ rad}$$
+  $$\theta_{\text{thigh\_left}} = \sin(\text{anim\_phase}) \cdot 0.75\text{ rad}$$
   $$\theta_{\text{thigh\_right}} = -\theta_{\text{thigh\_left}}$$
-- **Knee Bend**:
-  $$\theta_{\text{shin}} = |\sin(\text{walk\_phase} - 0.4)| \cdot 0.5\text{ rad}$$
-- **Arm Swing**: Arms swing reciprocally in opposition to the legs to balance momentum.
+- **Knee Hinge Bend**:
+  $$\theta_{\text{knee\_left}} = (\theta_{\text{thigh\_left}} < 0) \,?\, (-\theta_{\text{thigh\_left}} \cdot 0.9) : 0.0$$
+- **Arm Swing**: Swings in reciprocal counter-phase to balance torso momentum.
 
 ### C. Ballistic Jump
 - Triggered with Cross ($\times$):
-  $$V_y \mathrel{+}= 5.2\text{ m/s}$$
-  $$Y(t) \mathrel{+}= V_y \cdot dt - \frac{1}{2} g \cdot dt^2$$
-- Legs tuck upward while in the air ($\theta_{\text{thigh}} = -0.4\text{ rad}$, $\theta_{\text{knee}} = 0.6\text{ rad}$).
-- Ground shadow shrinks dynamically in proportion to altitude ($S = 1.0 - \frac{Y}{2.5}$).
+  $$V_y = 5.8\text{ m/s}$$
+  $$Y(t) \mathrel{+}= V_y \cdot dt, \quad V_y \mathrel{-}= 16.0 \cdot dt$$
+- **Airborne pose**: Asymmetric athletic jump pose ($\theta_{\text{thigh\_left}} = 0.5$, $\theta_{\text{thigh\_right}} = -0.4$, $\theta_{\text{knee\_left}} = 0.6$, $\theta_{\text{knee\_right}} = 0.8$).
+- **Dynamic ground shadow**: Scales inversely with altitude:
+  $$S = \max\left(0.25, \; \frac{1.0}{1.0 + Y \cdot 1.2}\right)$$
 
 ### D. Sword Slash Attack
 - Triggered with Square ($\square$):
-  - Right arm raises and executes a rapid $1.8\text{ rad}$ downward slash arc.
-  - Utilizes smooth ease-out interpolation for snappy, impactful combat feel.
+  - Right arm raises and executes a wide $3.8\text{ rad}$ downward slash arc (sweeping from $-2.2\text{ rad}$ back swing to $+1.6\text{ rad}$ follow-through).
+  - Torso twists and dips dynamically into the strike.
 
 ---
 

@@ -85,10 +85,11 @@ psp-forge run
 ## 🚀 Architecture & Key Features
 
 ### 1. CLI Orchestrator (`psp-forge`)
-* **`psp-forge init <name> [--template 2d|3d]`**: Scaffolds a complete project with CMakeLists.txt, `psp.toml` manifest, assets, and VSCode/Clangd include paths.
+* **`psp-forge init <name> [--template 2d|3d]`**: Scaffolds a complete project with CMakeLists.txt, `psp.toml` manifest, assets, and VS Code C/C++ include paths.
 * **`psp-forge cook`**: Incremental build system for game assets with timestamp caching.
-* **`psp-forge build [--clean] [--release|--debug]`**: Wraps `psp-cmake` and `make` to compile MIPS binaries, call `psp-fixup-imports`, `prxgen`, `mksfoex`, and generate relocatable `EBOOT.PBP` (PRX mode).
-* **`psp-forge run`**: Auto-detects local PPSSPP installations (AppImage, native binary, portable configurations) and boots the game in one click.
+* **`psp-forge build [--clean] [--release|--debug]`**: Automates asset cooking, wraps `psp-cmake` and `cmake --build` to compile MIPS binaries and generate relocatable `EBOOT.PBP` (PRX mode).
+* **`psp-forge run`**: Auto-detects local PPSSPP installations (Flatpak, native binary, AppImage) and boots the game in one click.
+* **`psp-forge clean`**: Cleans the build directory and compiled assets.
 
 ### 2. Hardware-Aware Asset Cooker
 The PSP hardware imposes strict memory and rasterizer constraints. The Asset Cooker automatically converts assets and warns you before hitting hardware bottlenecks:
@@ -105,7 +106,7 @@ The PSP hardware imposes strict memory and rasterizer constraints. The Asset Coo
 
 ### 3. C99 Micro-Engine (`libpspforge`)
 * **Zero Per-Frame Dynamic Allocation**: Zero allocations during the 60 FPS game loop. The 2 MB on-chip eDRAM is deterministically partitioned: Draw buffer ($544\text{ KiB}$), Display buffer ($544\text{ KiB}$), 16-bit Depth buffer ($272\text{ KiB}$), and Texture scratchpad ($688\text{ KiB}$). Dynamic allocations (`malloc`, `free`) are strictly confined to asset loading during scene transitions.
-* **Display List Management**: Safe 16-byte aligned GU Display Lists with automatic D-Cache writeback (`sceKernelDcacheWritebackRange`).
+* **Display List & Memory Management**: Safe 16-byte aligned GU Display Lists with D-Cache writeback (`sceKernelDcacheWritebackRange`) for uploaded textures, vertices, and audio DMA buffers.
 * **2D & 3D Pipelines**: Fast 2D sprite batching (`GU_SPRITES`), perspective projection, camera view matrix, articulated hierarchical node transforms (`forge_draw_mesh_node`), and distance-based virtual light culling.
 * **Collision Engine**: Lightweight, allocation-free 2D primitives (`ForgeRect`, `ForgeCircle`) and 3D bounding volumes (`ForgeAABB`, `ForgeSphere`) with analytical intersection tests.
 * **2D Flipbook Animation**: Grid-based spritesheet player (`ForgeSpriteAnim`) with frame timing, UV coordinate computation, and playback loops.
@@ -250,9 +251,9 @@ Every PSP-Forge project compiles with the `BUILD_PRX` directive enabled, ensurin
 ### Built-in Hardware Stability Defaults
 * **Pure User-Mode Linking**: Links only against user-mode stubs (`libpspuser.a`), avoiding `*ForKernel` references that trigger `8002013C` or boot freezes on CFW.
 * **Safe HOME/PS Button Teardown**: Asynchronous exit callback sets `s_running = 0`, allowing the main thread loop to cleanly shut down display lists, audio DMA, and release VRAM before calling `sceKernelExitGame()`.
-* **FPU Trap Masking**: Calls `pspfpuSetEnable(0)` on startup to prevent Allegrex floating-point exceptions from crashing the hardware.
+* **FPU Trap Masking**: Calls `pspFpuSetEnable(0)` on startup to prevent Allegrex floating-point exceptions from crashing the hardware.
 * **Dynamic RAM Sizing**: Relies on Newlib's `_sbrk.c` dynamic heap allocation, avoiding hardcoded `PSP_HEAP_SIZE_KB` allocation failures.
-* **16-Byte DMA Alignment**: All textures, display lists, and vertices use `memalign(16, size)` to prevent GPU bus error lockups.
+* **16-Byte DMA Alignment**: 16-byte alignment for display lists (`__attribute__((aligned(16)))`), textures (`memalign(16, size)`), and mesh vertices to prevent GPU bus error lockups.
 * **Non-Blocking Input**: Uses `sceCtrlPeekBufferPositive` to guarantee zero frame-loop hitching.
 
 ### Installation to Memory Stick
@@ -314,7 +315,7 @@ architecture_features:
   - Lightweight AABB, Sphere, Rect, and Circle collision detection
   - Multi-scene lifecycle architecture (ForgeScene on_init, on_update, on_draw, on_destroy)
   - 100% vibe-coded via human-directed AI pair programming
-toolchain_dependencies: [pspdev, psp-gcc, psp-cmake, pspsdk, libgu, libgum]
+toolchain_dependencies: [pspdev, psp-gcc, psp-cmake, pspsdk, pspgu, pspgum]
 license: MIT
 ```
 

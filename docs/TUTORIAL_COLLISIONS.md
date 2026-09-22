@@ -16,12 +16,32 @@ The complete working demo associated with this guide is located in:
 
 To avoid heavy polygonal mesh-mesh intersection calculations (which would saturate the 333 MHz MIPS CPU), arcade and action games rely on **Bounding Volumes** that can be evaluated in minimal CPU clock cycles:
 
-| Geometry | Memory Footprint | Typical Usage |
-|---|---|---|
-| **`ForgeRect`** (2D AABB) | 16 bytes ($x, y, w, h$) | Characters, platforms, rectangular obstacles, trigger zones |
-| **`ForgeCircle`** (2D Circle) | 12 bytes ($x, y, r$) | Collectible coins, projectiles, energy spheres |
-| **`ForgeAABB`** (3D Box) | 24 bytes ($\min_{xyz}, \max_{xyz}$) | Vehicles, track boundaries, walls, level props |
-| **`ForgeSphere`** (3D Sphere) | 16 bytes ($\text{center}_{xyz}, r$) | Proximity radii, 3D projectiles, culling spheres |
+| Geometry | Memory Footprint | Members | Typical Usage |
+|---|---|---|---|
+| **`ForgeRect`** (2D AABB) | 16 bytes | `float x, y, w, h;` | Characters, platforms, rectangular obstacles, trigger zones |
+| **`ForgeCircle`** (2D Circle) | 12 bytes | `float x, y, radius;` | Collectible coins, projectiles, energy spheres |
+| **`ForgeAABB`** (3D Box) | 24 bytes | `ScePspFVector3 min, max;` | Vehicles, track boundaries, walls, level props |
+| **`ForgeSphere`** (3D Sphere) | 16 bytes | `ScePspFVector3 center; float radius;` | Proximity radii, 3D projectiles, culling spheres |
+
+```c
+typedef struct {
+    float x, y, w, h;
+} ForgeRect;
+
+typedef struct {
+    float x, y, radius;
+} ForgeCircle;
+
+typedef struct {
+    ScePspFVector3 min;
+    ScePspFVector3 max;
+} ForgeAABB;
+
+typedef struct {
+    ScePspFVector3 center;
+    float radius;
+} ForgeSphere;
+```
 
 ---
 
@@ -70,21 +90,23 @@ if (forge_collide_rect_rect(player_box, obstacle_box)) {
 ```
 
 ### B. Collectible Item / Coin Trigger (Rectangle vs Circle)
-When the player's rectangular hitbox overlaps the circular coin boundary:
+When the player's rectangular hitbox overlaps the circular coin boundary (as in `demos/demo_collisions/src/main.c`):
 
 ```c
-if (forge_collide_rect_circle(player_box, coin_circle)) {
+ForgeCircle coin_col = { 360.0f, 124.0f, 14.0f };
+
+if (forge_collide_rect_circle(player_box, coin_col)) {
     score++;
-    forge_sound_play(chime_snd, 0);
+    if (chime_snd) forge_sound_play(chime_snd, 0);
 
     // Reposition coin randomly across map
-    coin_circle.x = 60.0f + (float)(rand() % 360);
-    coin_circle.y = 40.0f + (float)(rand() % 190);
+    coin_col.x = 60.0f + (float)(rand() % 360);
+    coin_col.y = 40.0f + (float)(rand() % 190);
 }
 ```
 
 ### C. 3D Model Collisions
-For 3D meshes loaded via `forge_mesh_load()`, the `.p3d` binary header contains precalculated local AABB bounds produced at cook time. To check if two 3D models collide in the game world:
+While `demos/demo_collisions` focuses on real-time 2D gameplay, PSP-Forge provides identical high-speed collision logic for 3D meshes. For 3D meshes loaded via `forge_mesh_load()`, the `.p3d` binary header contains precalculated local AABB bounds produced at cook time. To check if two 3D models collide in the game world:
 
 ```c
 ForgeAABB vehicle_box = forge_mesh_get_transformed_aabb(
