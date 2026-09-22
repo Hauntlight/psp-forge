@@ -140,6 +140,8 @@ void       forge_draw_mesh(
 
 void       forge_draw_mesh_current(const ForgeMesh* mesh, const ForgeTexture* tex);
 
+void       forge_set_alpha_test(bool enable, uint8_t ref_value);
+
 void       forge_draw_mesh_node(
     const ForgeMesh* mesh,
     const ForgeTexture* tex,

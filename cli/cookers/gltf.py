@@ -501,51 +501,353 @@ def cook_gltf_model(model: GLTFModel, output_path: str) -> bool:
     return True
 
 
-def cook_gltf_textures(model: GLTFModel, output_dir: str, prefix: str) -> List[str]:
-    """Extracts embedded glTF textures, resizes if exceeding 512x512, and cooks to .tex."""
+def cook_gltf_textures(model: GLTFModel, output_dir: str, prefix: str) -> Tuple[List[str], Dict[int, Tuple[float, float, float, float]]]:
+    """
+    Extracts embedded glTF textures, stitches multiple textures into a single
+    power-of-two texture atlas (Material Fusion), and cooks to a single <prefix>.tex.
+    Returns:
+        (output_texs_list, uv_transforms_dict)
+        where uv_transforms_dict maps image_index -> (u_offset, v_offset, u_scale, v_scale)
+    """
     from .texture import cook_texture
     import io
     from PIL import Image
 
-    output_texs = []
-    for idx, img in enumerate(model.gltf.get("images", [])):
+    images = model.gltf.get("images", [])
+    if not images:
+        return [], {}
+
+    pil_images: List[Optional[Image.Image]] = []
+    for idx, img in enumerate(images):
         if "bufferView" not in img:
+            pil_images.append(None)
             continue
         bv = model.gltf["bufferViews"][img["bufferView"]]
         offset = bv.get("byteOffset", 0)
         length = bv["byteLength"]
         raw_bytes = model.bin_data[offset:offset + length]
-
-        img_name = img.get("name", f"tex_{idx}")
-        safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in img_name).strip()
-        if not safe_name:
-            safe_name = f"tex_{idx}"
-
         try:
-            im = Image.open(io.BytesIO(raw_bytes))
-            # Auto-downsample to PSP hardware limit 512x512 if necessary
-            w, h = im.size
-            if w > 512 or h > 512:
-                scale = min(512.0 / w, 512.0 / h)
-                new_w = max(8, min(512, int(w * scale)))
-                new_h = max(8, min(512, int(h * scale)))
-                resample = getattr(Image, "Resampling", Image).LANCZOS
-                im = im.resize((new_w, new_h), resample)
-
-            # Save temporary PNG
-            tmp_png = os.path.join(output_dir, f"{prefix}_{safe_name}_tmp.png")
-            im.save(tmp_png, "PNG")
-
-            dst_tex = os.path.join(output_dir, f"{prefix}_{safe_name}.tex")
-            cook_texture(tmp_png, dst_tex, format_type="8888", swizzle=True)
-            if os.path.exists(tmp_png):
-                os.remove(tmp_png)
-            output_texs.append(dst_tex)
-            print(f"  [+] Extracted & cooked texture: {os.path.basename(dst_tex)}")
+            im = Image.open(io.BytesIO(raw_bytes)).convert("RGBA")
+            pil_images.append(im)
         except Exception as e:
-            print(f"  [!] Warning: Failed to extract texture {img_name}: {e}")
+            print(f"  [!] Warning: Failed to decode image {idx}: {e}")
+            pil_images.append(None)
 
-    return output_texs
+    valid_images = [img for img in pil_images if img is not None]
+    if not valid_images:
+        return [], {}
+
+    uv_transforms: Dict[int, Tuple[float, float, float, float]] = {}
+    atlas_w, atlas_h = 512, 512
+    atlas = Image.new("RGBA", (atlas_w, atlas_h), (0, 0, 0, 0))
+
+    if len(valid_images) == 1:
+        # Single image: scale directly to 512x512 with identity UV transform
+        single_idx = next(i for i, img in enumerate(pil_images) if img is not None)
+        im = pil_images[single_idx]
+        resample = getattr(Image, "Resampling", Image).LANCZOS
+        im_resized = im.resize((atlas_w, atlas_h), resample)
+        atlas.paste(im_resized, (0, 0))
+        uv_transforms[single_idx] = (0.0, 0.0, 1.0, 1.0)
+    else:
+        # Multi-material fusion into a grid atlas (e.g., 2 images -> 2x1 grid)
+        # Calculate grid layout
+        num_imgs = len(valid_images)
+        if num_imgs <= 2:
+            cols, rows = 2, 1
+        elif num_imgs <= 4:
+            cols, rows = 2, 2
+        elif num_imgs <= 6:
+            cols, rows = 3, 2
+        else:
+            cols, rows = 4, 2
+
+        tile_w = atlas_w // cols
+        tile_h = atlas_h // rows
+        resample = getattr(Image, "Resampling", Image).LANCZOS
+
+        valid_count = 0
+        for idx, im in enumerate(pil_images):
+            if im is None:
+                continue
+            col = valid_count % cols
+            row = valid_count // cols
+            valid_count += 1
+
+            im_tile = im.resize((tile_w, tile_h), resample)
+            pos_x = col * tile_w
+            pos_y = row * tile_h
+            atlas.paste(im_tile, (pos_x, pos_y))
+
+            u_off = pos_x / float(atlas_w)
+            v_off = pos_y / float(atlas_h)
+            u_scale = tile_w / float(atlas_w)
+            v_scale = tile_h / float(atlas_h)
+            uv_transforms[idx] = (u_off, v_off, u_scale, v_scale)
+
+    tmp_png = os.path.join(output_dir, f"{prefix}_atlas_tmp.png")
+    atlas.save(tmp_png, "PNG")
+
+    dst_tex = os.path.join(output_dir, f"{prefix}.tex")
+    cook_texture(tmp_png, dst_tex, format_type="8888", swizzle=True)
+    if os.path.exists(tmp_png):
+        os.remove(tmp_png)
+
+    print(f"  [+] Material Fusion: generated single texture atlas {os.path.basename(dst_tex)} ({len(valid_images)} textures fused)")
+    return [dst_tex], uv_transforms
+
+
+def cook_gltf_model(model: GLTFModel, output_path: str, uv_transforms: Optional[Dict[int, Tuple[float, float, float, float]]] = None) -> bool:
+    """Extracts skeleton and mesh chunks and saves a .p3d v2 model file."""
+    if uv_transforms is None:
+        uv_transforms = {}
+
+    skins = model.gltf.get("skins", [])
+    joints = skins[0].get("joints", []) if skins else []
+    if len(joints) > 64:
+        joints = joints[:64]
+
+    # Map parent of each node
+    parent_map: Dict[int, int] = {}
+    for p_id, node in enumerate(model.gltf.get("nodes", [])):
+        for ch in node.get("children", []):
+            parent_map[ch] = p_id
+
+    # Inverse bind matrices
+    inv_bind_matrices = []
+    if skins and "inverseBindMatrices" in skins[0]:
+        ibm_data = model.read_accessor(skins[0]["inverseBindMatrices"])
+        inv_bind_matrices = ibm_data
+
+    # Pack ForgeBoneDef array (120 bytes per bone)
+    bone_defs = bytearray()
+    for idx, j_node_id in enumerate(joints):
+        j_node = model.gltf["nodes"][j_node_id]
+        name = j_node.get("name", f"bone_{idx}")[:23].encode("utf-8")
+        name_padded = name.ljust(24, b"\x00")
+
+        # Parent index relative to joints array
+        raw_p = parent_map.get(j_node_id, None)
+        p_idx = joints.index(raw_p) if (raw_p in joints) else 0xFF
+
+        local_pos = j_node.get("translation", [0.0, 0.0, 0.0])
+        local_rot = j_node.get("rotation", [0.0, 0.0, 0.0, 1.0])
+
+        if idx < len(inv_bind_matrices):
+            ibm = inv_bind_matrices[idx]
+        else:
+            # Identity 4x4
+            ibm = [
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0
+            ]
+
+        bone_defs.extend(name_padded)
+        bone_defs.extend(struct.pack("<B3s3f4f16f",
+            p_idx,
+            b"\x00" * 3,
+            local_pos[0], local_pos[1], local_pos[2],
+            local_rot[0], local_rot[1], local_rot[2], local_rot[3],
+            *ibm
+        ))
+
+    # Helper to resolve image transform for a primitive
+    def get_primitive_uv_transform(prim_dict: dict) -> Tuple[float, float, float, float]:
+        mat_idx = prim_dict.get("material")
+        if mat_idx is not None and "materials" in model.gltf and mat_idx < len(model.gltf["materials"]):
+            mat = model.gltf["materials"][mat_idx]
+            pbr = mat.get("pbrMetallicRoughness", {})
+            bct = pbr.get("baseColorTexture", {})
+            tex_idx = bct.get("index")
+            if tex_idx is not None and "textures" in model.gltf and tex_idx < len(model.gltf["textures"]):
+                texture_obj = model.gltf["textures"][tex_idx]
+                img_source = texture_obj.get("source")
+                if img_source is not None and img_source in uv_transforms:
+                    return uv_transforms[img_source]
+        # Default or fallback to first available transform or identity
+        if 0 in uv_transforms:
+            return uv_transforms[0]
+        return (0.0, 0.0, 1.0, 1.0)
+
+    # Collect meshes and chunk them if skinned
+    chunks_data = bytearray()
+    chunk_count = 0
+
+    for m_idx, mesh in enumerate(model.gltf.get("meshes", [])):
+        for p_idx, prim in enumerate(mesh.get("primitives", [])):
+            if "POSITION" not in prim["attributes"]:
+                continue
+
+            pos_list = model.read_accessor(prim["attributes"]["POSITION"])
+            norm_list = model.read_accessor(prim["attributes"]["NORMAL"]) if "NORMAL" in prim["attributes"] else [(0.0, 1.0, 0.0)] * len(pos_list)
+            uv_list = model.read_accessor(prim["attributes"]["TEXCOORD_0"]) if "TEXCOORD_0" in prim["attributes"] else [(0.0, 0.0)] * len(pos_list)
+
+            indices = model.read_accessor(prim["indices"]) if "indices" in prim else list(range(len(pos_list)))
+
+            # UV transformation for this primitive's material
+            u_off, v_off, u_scale, v_scale = get_primitive_uv_transform(prim)
+
+            # Check if skinned
+            has_skin = ("JOINTS_0" in prim["attributes"] and "WEIGHTS_0" in prim["attributes"])
+            if has_skin:
+                joint_attr = model.read_accessor(prim["attributes"]["JOINTS_0"])
+                weight_attr = model.read_accessor(prim["attributes"]["WEIGHTS_0"])
+
+                # Partition triangles into sub-chunks of <= 8 bones
+                num_tris = len(indices) // 3
+                raw_chunks: List[Dict] = []
+
+                for t in range(num_tris):
+                    i0, i1, i2 = indices[t * 3], indices[t * 3 + 1], indices[t * 3 + 2]
+                    tri_bones: Set[int] = set()
+                    for vi in (i0, i1, i2):
+                        for jb, wb in zip(joint_attr[vi], weight_attr[vi]):
+                            if wb > 0.001 and jb < len(joints):
+                                tri_bones.add(jb)
+
+                    placed = False
+                    for c in raw_chunks:
+                        if len(c["bones"].union(tri_bones)) <= 8:
+                            c["bones"].update(tri_bones)
+                            c["triangles"].append((i0, i1, i2))
+                            placed = True
+                            break
+                    if not placed:
+                        raw_chunks.append({"bones": set(tri_bones), "triangles": [(i0, i1, i2)]})
+
+                # Build each skinned chunk
+                for c in raw_chunks:
+                    palette = sorted(list(c["bones"]))
+                    # Pad palette to 8
+                    palette_map = {global_b: local_idx for local_idx, global_b in enumerate(palette)}
+                    palette_padded = palette + [0] * (8 - len(palette))
+
+                    vtx_bytes = bytearray()
+                    min_x, min_y, min_z = float("inf"), float("inf"), float("inf")
+                    max_x, max_y, max_z = float("-inf"), float("-inf"), float("-inf")
+
+                    # We support 2 weights hardware blending (GU_WEIGHTS(2))
+                    vtx_format = GU_WEIGHTS(2) | GU_WEIGHT_32BITF | GU_TEXTURE_32BITF | GU_NORMAL_32BITF | GU_VERTEX_32BITF | GU_TRANSFORM_3D
+                    vtx_stride = 40  # 2*4 + 2*4 + 3*4 + 3*4 = 40 bytes (multiple of 4)
+
+                    vtx_count = len(c["triangles"]) * 3
+                    for tri in c["triangles"]:
+                        for vi in tri:
+                            px, py, pz = pos_list[vi]
+                            nx, ny, nz = norm_list[vi]
+                            raw_u, raw_v = uv_list[vi]
+
+                            # glTF UVs originate at top-left (0,0), matching PSP GE texture rasterization.
+                            # Map through atlas transform without inverting V.
+                            u = raw_u * u_scale + u_off
+                            v = raw_v * v_scale + v_off
+
+                            min_x, min_y, min_z = min(min_x, px), min(min_y, py), min(min_z, pz)
+                            max_x, max_y, max_z = max(max_x, px), max(max_y, py), max(max_z, pz)
+
+                            # Extract top 2 local weights
+                            j_pairs = []
+                            for jb, wb in zip(joint_attr[vi], weight_attr[vi]):
+                                if jb in palette_map:
+                                    j_pairs.append((palette_map[jb], wb))
+                            j_pairs.sort(key=lambda x: x[1], reverse=True)
+                            w0 = j_pairs[0][1] if len(j_pairs) > 0 else 1.0
+                            w1 = j_pairs[1][1] if len(j_pairs) > 1 else 0.0
+                            tot_w = w0 + w1
+                            if tot_w > 1e-6:
+                                w0 /= tot_w
+                                w1 /= tot_w
+                            else:
+                                w0, w1 = 1.0, 0.0
+
+                            # PSPSDK vertex layout order: Weights -> Texture UV -> Normal -> Position
+                            vtx_bytes.extend(struct.pack(
+                                "<2f2f3f3f",
+                                w0, w1,
+                                u, v,
+                                nx, ny, nz,
+                                px, py, pz
+                            ))
+
+                    cx = (min_x + max_x) * 0.5
+                    cy = (min_y + max_y) * 0.5
+                    cz = (min_z + max_z) * 0.5
+                    rad = math.sqrt((max_x - cx)**2 + (max_y - cy)**2 + (max_z - cz)**2)
+
+                    # Pack P3d2ChunkHeader
+                    chunk_hdr = struct.pack(
+                        "<hB8sIHI3f3f3ff4s",
+                        -1,  # node_index = -1 (skinned)
+                        len(palette),
+                        bytes(palette_padded[:8]),
+                        vtx_format,
+                        vtx_stride,
+                        vtx_count,
+                        min_x, min_y, min_z,
+                        max_x, max_y, max_z,
+                        cx, cy, cz,
+                        rad,
+                        b"\x00" * 4
+                    )
+                    chunks_data.extend(chunk_hdr)
+                    chunks_data.extend(vtx_bytes)
+                    chunk_count += 1
+            else:
+                # Rigid mesh (Mode A)
+                vtx_format = GU_TEXTURE_32BITF | GU_NORMAL_32BITF | GU_VERTEX_32BITF | GU_TRANSFORM_3D
+                vtx_stride = 32
+                vtx_bytes = bytearray()
+                min_x, min_y, min_z = float("inf"), float("inf"), float("inf")
+                max_x, max_y, max_z = float("-inf"), float("-inf"), float("-inf")
+
+                vtx_count = len(indices)
+                for vi in indices:
+                    px, py, pz = pos_list[vi]
+                    nx, ny, nz = norm_list[vi]
+                    raw_u, raw_v = uv_list[vi]
+
+                    u = raw_u * u_scale + u_off
+                    v = raw_v * v_scale + v_off
+
+                    min_x, min_y, min_z = min(min_x, px), min(min_y, py), min(min_z, pz)
+                    max_x, max_y, max_z = max(max_x, px), max(max_y, py), max(max_z, pz)
+
+                    vtx_bytes.extend(struct.pack("<2f3f3f", u, v, nx, ny, nz, px, py, pz))
+
+                cx = (min_x + max_x) * 0.5
+                cy = (min_y + max_y) * 0.5
+                cz = (min_z + max_z) * 0.5
+                rad = math.sqrt((max_x - cx)**2 + (max_y - cy)**2 + (max_z - cz)**2)
+
+                chunk_hdr = struct.pack(
+                    "<hB8sIHI3f3f3ff4s",
+                    0,  # root node
+                    0,
+                    b"\x00" * 8,
+                    vtx_format,
+                    vtx_stride,
+                    vtx_count,
+                    min_x, min_y, min_z,
+                    max_x, max_y, max_z,
+                    cx, cy, cz,
+                    rad,
+                    b"\x00" * 4
+                )
+                chunks_data.extend(chunk_hdr)
+                chunks_data.extend(vtx_bytes)
+                chunk_count += 1
+
+    # Write out P3D2 file
+    hdr = struct.pack("<4sHHH8s", b"P3D2", 2, len(joints), chunk_count, b"\x00" * 8)
+    with open(output_path, "wb") as f:
+        f.write(hdr)
+        f.write(bone_defs)
+        f.write(chunks_data)
+
+    print(f"  [+] Saved model: {os.path.basename(output_path)} ({len(joints)} bones, {chunk_count} chunks)")
+    return True
 
 
 def cook_gltf(input_path: str, output_dir: str) -> Dict[str, list]:
@@ -554,13 +856,14 @@ def cook_gltf(input_path: str, output_dir: str) -> Dict[str, list]:
     base_name = os.path.splitext(os.path.basename(input_path))[0]
 
     model = GLTFModel(input_path)
+    texs_output, uv_transforms = cook_gltf_textures(model, output_dir, prefix=base_name)
     model_output = os.path.join(output_dir, f"{base_name}.p3d")
-    cook_gltf_model(model, model_output)
+    cook_gltf_model(model, model_output, uv_transforms=uv_transforms)
     anims_output = cook_gltf_animations(model, output_dir, prefix=base_name)
-    texs_output = cook_gltf_textures(model, output_dir, prefix=base_name)
 
     return {
         "model": [model_output],
         "animations": anims_output,
         "textures": texs_output
     }
+

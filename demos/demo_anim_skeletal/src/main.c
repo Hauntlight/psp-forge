@@ -21,7 +21,10 @@ int main(int argc, char* argv[]) {
 
     /* Load 3D Skeletal Model and Texture */
     ForgeModel3D* model = forge_model3d_load("assets/character.p3d");
-    ForgeTexture* tex   = forge_texture_load("assets/character_characterw_color.tex");
+    ForgeTexture* tex   = forge_texture_load("assets/character.tex");
+
+    /* Enable Alpha Test for cutouts (e.g., eyes/eyebrows) */
+    forge_set_alpha_test(true, 0x20);
 
     /* Load Precompiled Animation Clips */
     ForgeAnimClip* clip_idle = forge_anim3d_load("assets/character_anim_iddle.panm");
@@ -50,7 +53,7 @@ int main(int argc, char* argv[]) {
     float char_yaw = 0.0f;
 
     float cam_dist  = 3.2f;
-    float cam_yaw   = 0.0f;
+    float cam_yaw   = 3.14159f;
     float cam_pitch = 0.35f;
 
     ForgeInput in;
@@ -93,31 +96,46 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        /* State machine */
+        /* State machine & Camera-Relative Locomotion */
         if (state == STATE_ACTION) {
             if (animator.finished) {
                 state = STATE_IDLE;
                 if (clip_idle) forge_anim3d_play(&animator, clip_idle, true);
             }
         } else {
-            if (move_len > 0.6f) {
-                if (state != STATE_RUN && clip_run) {
-                    state = STATE_RUN;
-                    forge_anim3d_play(&animator, clip_run, true);
+            if (move_len > 0.15f) {
+                float sin_cam = sinf(cam_yaw);
+                float cos_cam = cosf(cam_yaw);
+
+                /* Camera-relative movement vectors:
+                 * move_x: -1.0 (left) to +1.0 (right)
+                 * move_y: -1.0 (up/forward) to +1.0 (down/backward)
+                 */
+                float world_move_x = (-move_x * cos_cam + move_y * sin_cam);
+                float world_move_z = (-move_x * sin_cam - move_y * cos_cam);
+
+                float speed = (move_len > 0.6f) ? 2.4f : 1.2f;
+                if (move_len > 0.6f) {
+                    if (state != STATE_RUN && clip_run) {
+                        state = STATE_RUN;
+                        forge_anim3d_play(&animator, clip_run, true);
+                    }
+                } else {
+                    if (state != STATE_WALK && clip_walk) {
+                        state = STATE_WALK;
+                        forge_anim3d_play(&animator, clip_walk, true);
+                    }
                 }
-                float speed = 2.4f;
-                char_x += (move_x * cosf(cam_yaw) - move_y * sinf(cam_yaw)) * speed * dt;
-                char_z += (move_x * sinf(cam_yaw) + move_y * cosf(cam_yaw)) * speed * dt;
-                char_yaw = atan2f(move_x, -move_y) + cam_yaw;
-            } else if (move_len > 0.15f) {
-                if (state != STATE_WALK && clip_walk) {
-                    state = STATE_WALK;
-                    forge_anim3d_play(&animator, clip_walk, true);
-                }
-                float speed = 1.2f;
-                char_x += (move_x * cosf(cam_yaw) - move_y * sinf(cam_yaw)) * speed * dt;
-                char_z += (move_x * sinf(cam_yaw) + move_y * cosf(cam_yaw)) * speed * dt;
-                char_yaw = atan2f(move_x, -move_y) + cam_yaw;
+
+                char_x += world_move_x * speed * dt;
+                char_z += world_move_z * speed * dt;
+
+                /* Smoothly or directly orient towards movement vector */
+                float target_yaw = atan2f(world_move_x, world_move_z);
+                float angle_diff = target_yaw - char_yaw;
+                while (angle_diff >  3.14159f) angle_diff -= 6.28318f;
+                while (angle_diff < -3.14159f) angle_diff += 6.28318f;
+                char_yaw += angle_diff * 14.0f * dt;
             } else {
                 if (state != STATE_IDLE && clip_idle) {
                     state = STATE_IDLE;

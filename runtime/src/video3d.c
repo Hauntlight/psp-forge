@@ -19,7 +19,9 @@ typedef struct __attribute__((packed)) {
 } Pm3dHeader;
 
 static ForgeLight s_virtual_lights[FORGE_MAX_VIRTUAL_LIGHTS];
-static int        s_lighting_enabled = 0;
+static int        s_lighting_enabled   = 0;
+static bool       s_alpha_test_enabled = false;
+static uint8_t    s_alpha_test_ref     = 0;
 
 ForgeMesh* forge_mesh_load(const char* path) {
     SceUID fd = forge_io_open(path);
@@ -226,11 +228,22 @@ void forge_draw_mesh_current(const ForgeMesh* mesh, const ForgeTexture* tex) {
     } else {
         sceGuDisable(GU_LIGHTING);
     }
-    sceGuDisable(GU_ALPHA_TEST);
+
+    if (s_alpha_test_enabled) {
+        sceGuEnable(GU_ALPHA_TEST);
+        sceGuAlphaFunc(GU_GREATER, s_alpha_test_ref, 0xFF);
+    } else {
+        sceGuDisable(GU_ALPHA_TEST);
+    }
 
     /* Synchronize matrix stack to hardware and draw */
     sceGumUpdateMatrix();
     sceGumDrawArray(GU_TRIANGLES, mesh->vertex_format, mesh->count, 0, mesh->vertices);
+}
+
+void forge_set_alpha_test(bool enable, uint8_t ref_value) {
+    s_alpha_test_enabled = enable;
+    s_alpha_test_ref     = ref_value;
 }
 
 void forge_draw_mesh(
