@@ -149,6 +149,93 @@ void       forge_draw_mesh_node(
 );
 
 /* ========================================================================= */
+/* 3D Skeletal Animation & Quaternions                                       */
+/* ========================================================================= */
+
+#define FORGE_MAX_BONES    64
+#define FORGE_MAX_HW_BONES 8
+
+typedef struct {
+    float x, y, z, w;
+} ForgeQuat;
+
+typedef struct {
+    char     name[24];             /* Identifier (e.g. "DEF-spine", "head") */
+    uint8_t  parent_index;         /* Parent node index (0xFF = root) */
+    uint8_t  reserved[3];
+    float    local_pos[3];         /* Neutral rest position */
+    float    local_rot[4];         /* Neutral rest quaternion (x,y,z,w) */
+    float    inv_bind_matrix[16];  /* 4x4 inverse bind matrix for skinning */
+} ForgeBoneDef;
+
+typedef struct __attribute__((packed)) {
+    char     magic[4];             /* "PANM" */
+    uint16_t version;              /* 1 */
+    uint16_t bone_count;
+    uint32_t frame_count;
+    float    framerate;
+    float    duration;
+    float    pos_scale;            /* Scale factor for compressed positions (e.g. 0.001f) */
+    uint8_t  reserved[8];
+} PanmHeader;
+
+typedef struct __attribute__((packed)) {
+    int16_t rot_quat[4];           /* Quantized x,y,z,w (* 32767) */
+    int16_t pos[3];                /* Quantized x,y,z: pos = raw * pos_scale */
+    int16_t reserved;
+} ForgeBoneSample;
+
+typedef struct {
+    PanmHeader       header;
+    ForgeBoneSample* samples;      /* frame_count * bone_count samples */
+} ForgeAnimClip;
+
+typedef struct {
+    ForgeMesh* mesh;               /* Geometry chunk */
+    int16_t    node_index;         /* Mode A: attached bone index (-1 if skinned) */
+    uint8_t    num_local_bones;    /* Mode B: number of active local bones (<= 8) */
+    uint8_t    bone_palette[8];    /* Mode B: maps local bone index (0..7) to global bone */
+} ForgeModelChunk;
+
+typedef struct {
+    uint16_t         bone_count;
+    ForgeBoneDef*    bones;
+    uint16_t         chunk_count;
+    ForgeModelChunk* chunks;
+} ForgeModel3D;
+
+typedef struct {
+    const ForgeAnimClip* clip;
+    float                time;
+    float                speed;
+    bool                 loop;
+    bool                 is_playing;
+    bool                 finished;
+    ScePspFMatrix4       world_matrices[FORGE_MAX_BONES]; /* Computed world transforms */
+    ScePspFMatrix4       skin_matrices[FORGE_MAX_BONES];  /* world * inv_bind_matrix */
+} ForgeAnimator;
+
+/* Quaternion Math Functions */
+void forge_quat_identity(ForgeQuat* q);
+void forge_quat_normalize(ForgeQuat* q);
+void forge_quat_slerp(ForgeQuat* out, const ForgeQuat* a, const ForgeQuat* b, float t);
+void forge_quat_to_matrix(ScePspFMatrix4* m, const ForgeQuat* q, const float pos[3]);
+
+/* Model3D & Skeletal Mesh Functions */
+ForgeModel3D* forge_model3d_load(const char* path);
+void          forge_model3d_free(ForgeModel3D* model);
+void          forge_model3d_draw(const ForgeModel3D* model, const ForgeAnimator* animator, const ForgeTexture* tex);
+
+/* 3D Skeletal Animation Player Functions */
+ForgeAnimClip* forge_anim3d_load(const char* path);
+void           forge_anim3d_free(ForgeAnimClip* clip);
+void           forge_anim3d_init(ForgeAnimator* animator);
+void           forge_anim3d_play(ForgeAnimator* animator, const ForgeAnimClip* clip, bool loop);
+void           forge_anim3d_stop(ForgeAnimator* animator);
+void           forge_anim3d_set_speed(ForgeAnimator* animator, float speed);
+void           forge_anim3d_update(ForgeAnimator* animator, const ForgeModel3D* model, float dt);
+
+/* ========================================================================= */
 /* Hardware Lighting & Culling                                               */
 /* ========================================================================= */
 

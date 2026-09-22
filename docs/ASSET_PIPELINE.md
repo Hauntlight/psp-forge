@@ -98,7 +98,7 @@ The `audio.py` cooker:
 - Supports `.mp3`, `.ogg`, `.flac`, `.m4a` when `ffmpeg` is available on the system.
 - Converts audio to 2-channel stereo (duplicating mono channels) for hardware compatibility.
 - Applies linear interpolation resampling if the source rate differs from 44100 Hz.
-- Rounds total sample count up to the next multiple of 64 samples and pads with silence.
+- Pads output PCM to the nearest multiple of 64 samples (128 bytes).
 
 ### Loading and Playing in C:
 ```c
@@ -113,7 +113,56 @@ forge_sound_free(sound);
 
 ---
 
-## 4. Executable Packaging & Hardware Compatibility (`EBOOT.PBP`)
+## 4. Skeletal 3D Models & Animations: glTF / GLB to `.p3d` & `.panm`
+
+The PSP Graphics Engine supports hardware vertex skinning for up to **8 bone matrices** (`GU_WEIGHTS(n)`, `sceGuBoneMatrix(0..7)`). For models with more than 8 bones, PSP-Forge introduces an automated **Mesh Chunking Pipeline** and forward kinematics clip format (`.panm`).
+
+| Source Format | Cooked PSP Format | Cooker Module | Optimizations Performed |
+|---|---|---|---|
+| `.gltf`, `.glb` | **`.p3d` (P3D2 Multi-Chunk)** | `cli/cookers/gltf.py` | Triangle clustering into $\le 8$ bone chunks, local bone index remapping, vertex weight normalization |
+| `.gltf`, `.glb` (Animations) | **`.panm`** (Skeletal Animation) | `cli/cookers/gltf.py` | Keyframe baking at 30 FPS, quaternion SLERP, 16-byte fixed samples |
+| Embedded Textures | **`.tex`** (PSP Texture) | `cli/cookers/gltf.py` | Auto-downsampling to $\le 512 \times 512$, block swizzling, POT padding |
+
+### Two Architectural Modes Supported:
+1. **Mode A: Hierarchical Rigid Meshes (Tekken 1–3 Style)**:
+   - For articulated models without continuous skinning (mechas, segmented armor, robots).
+   - Each limb or section is an independent mesh attached to a bone node.
+   - Evaluated using `pspgum` matrix stack operations (`sceGumPushMatrix()` / `sceGumPopMatrix()`).
+   - Completely bypasses the 8-bone hardware limit since each draw call uses only the active node matrix.
+2. **Mode B: Continuous Skinning with Mesh Chunking**:
+   - For organic, smooth-skinned characters (up to 64 bones total in the skeleton hierarchy).
+   - The cooker partitions triangles so that **each sub-mesh chunk references at most 8 unique bones**.
+   - Generates local bone palettes and remaps vertex bone indices (`0..7`).
+   - At runtime, `forge_model3d_draw()` binds the active chunk's skinning matrices to hardware bone registers (`sceGuBoneMatrix`) and dispatches native hardware-blended draw calls (`GU_WEIGHTS(1..8)`).
+
+### Loading and Animating in C:
+```c
+// 1. Load multi-chunk skinned model and animation clips
+ForgeModel3D* model = forge_model3d_load("assets/character.p3d");
+ForgeAnimClip* clip_idle = forge_anim3d_clip_load("assets/character_idle.panm");
+ForgeAnimClip* clip_walk = forge_anim3d_clip_load("assets/character_walk.panm");
+
+// 2. Initialize animator and play animation
+ForgeAnimator anim;
+forge_anim3d_init(&anim, model);
+forge_anim3d_play(&anim, clip_idle, true);
+
+// 3. Update & render in frame loop
+forge_anim3d_update(&anim, forge_get_delta_time());
+forge_model3d_draw(model, &anim, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, scale);
+
+// 4. Smoothly blend into another clip
+forge_anim3d_crossfade(&anim, clip_walk, 0.2f, true);
+
+// 5. Cleanup
+forge_anim3d_clip_free(clip_idle);
+forge_anim3d_clip_free(clip_walk);
+forge_model3d_free(model);
+```
+
+---
+
+## 5. Executable Packaging & Hardware Compatibility (`EBOOT.PBP`)
 
 To ensure the compiled game runs seamlessly **both in the PPSSPP emulator and on real PSP consoles**, make sure `CMakeLists.txt` includes the `BUILD_PRX` directive in `create_pbp_file()`:
 

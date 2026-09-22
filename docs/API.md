@@ -311,3 +311,71 @@ struct ForgeScene {
 * `ForgeScene* forge_scene_get_current(void);`: Returns pointer to active scene.
 * `void forge_scene_update_and_draw(float dt);`: Executes update and draw sequence for active scene.
 * `void forge_scene_reset(void);`: Destroys active scene (invoking its `on_destroy` callback if registered) and resets scene state. Automatically invoked by `forge_shutdown()`.
+
+---
+
+## 10. 3D Skeletal Animation & Multi-Chunk Models
+
+Support for rigged characters, forward kinematics animation sampling, and hardware vertex blending:
+
+```c
+#define FORGE_MAX_BONES    64
+#define FORGE_MAX_HW_BONES 8
+
+typedef struct { float x, y, z, w; } ForgeQuat;
+
+typedef struct {
+    char            name[32];
+    int32_t         parent_index;
+    ScePspFVector3  rest_pos;
+    ForgeQuat       rest_rot;
+    ScePspFVector3  rest_scale;
+    ScePspFMatrix4  inv_bind_matrix;
+} ForgeBoneDef;
+
+typedef struct {
+    uint32_t        num_chunks;
+    ForgeModelChunk* chunks;
+    uint32_t        num_bones;
+    ForgeBoneDef*   bones;
+    ForgeTexture*   texture;
+} ForgeModel3D;
+
+typedef struct {
+    const ForgeModel3D*   model;
+    const ForgeAnimClip*  current_clip;
+    const ForgeAnimClip*  blend_clip;
+    float                 current_time;
+    float                 blend_time;
+    float                 crossfade_duration;
+    float                 crossfade_timer;
+    float                 playback_speed;
+    bool                  is_looping;
+    bool                  is_playing;
+    ScePspFMatrix4        bone_world_matrices[FORGE_MAX_BONES];
+    ScePspFMatrix4        bone_skin_matrices[FORGE_MAX_BONES];
+} ForgeAnimator;
+```
+
+### Quaternion Math & Interpolation:
+* `ForgeQuat forge_quat_identity(void);`: Returns the identity quaternion `(0, 0, 0, 1)`.
+* `ForgeQuat forge_quat_normalize(ForgeQuat q);`: Normalizes a quaternion.
+* `ForgeQuat forge_quat_slerp(ForgeQuat a, ForgeQuat b, float t);`: Spherical linear interpolation between two quaternions along the shortest arc.
+* `void forge_quat_to_matrix(ForgeQuat q, ScePspFMatrix4* out);`: Converts a unit quaternion to a $4 \times 4$ rotation matrix.
+
+### Animation Clips (`.panm`):
+* `ForgeAnimClip* forge_anim3d_clip_load(const char* path);`: Loads a binary `.panm` animation clip into 16-byte aligned memory and flushes D-Cache.
+* `void forge_anim3d_clip_free(ForgeAnimClip* clip);`: Releases memory associated with an animation clip.
+
+### Animator State Machine:
+* `void forge_anim3d_init(ForgeAnimator* anim, const ForgeModel3D* model);`: Initializes animator with rest pose transforms.
+* `void forge_anim3d_play(ForgeAnimator* anim, const ForgeAnimClip* clip, bool loop);`: Starts playing a clip immediately.
+* `void forge_anim3d_crossfade(ForgeAnimator* anim, const ForgeAnimClip* clip, float duration, bool loop);`: Starts a smooth crossfade blend to a new animation clip over `duration` seconds.
+* `void forge_anim3d_update(ForgeAnimator* anim, float dt);`: Advances animation timing, computes joint transformations, and evaluates forward kinematics hierarchy.
+
+### Multi-Chunk Model Loading & Rendering:
+* `ForgeModel3D* forge_model3d_load(const char* path);`: Loads a multi-chunk P3D2 model file and its bone hierarchy.
+* `void forge_model3d_free(ForgeModel3D* model);`: Releases all sub-mesh chunks, bone definitions, and vertex arrays.
+* `void forge_model3d_set_texture(ForgeModel3D* model, ForgeTexture* tex);`: Binds a shared texture to the model.
+* `void forge_model3d_draw(const ForgeModel3D* model, const ForgeAnimator* anim, float x, float y, float z, float rx, float ry, float rz, float scale);`: Dispatches multi-chunk geometry to the hardware Graphics Engine, binding chunk skinning palettes to `sceGuBoneMatrix(0..7)` for continuous skinning (Mode B) or evaluating node transforms (Mode A).
+

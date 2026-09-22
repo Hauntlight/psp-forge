@@ -20,6 +20,7 @@ from .config import load_config, create_default_config
 from .cookers.texture import cook_texture
 from .cookers.mesh import cook_mesh
 from .cookers.audio import cook_audio
+from .cookers.gltf import cook_gltf
 
 # Directory where psp-forge is located
 FORGE_ROOT = Path(__file__).resolve().parent.parent
@@ -168,6 +169,15 @@ def cmd_cook(args):
                 cook_audio(str(src_file), str(dst_file), target_rate=44100, force_stereo=True)
                 cooked_count += 1
 
+            elif ext in [".gltf", ".glb"]:
+                dst_model = target_sub / f"{src_file.stem}.p3d"
+                if not force and dst_model.exists() and dst_model.stat().st_mtime >= src_file.stat().st_mtime:
+                    skipped_count += 1
+                    continue
+                print(f"[+] Cooking 3D glTF/GLB model & animations: {src_file}")
+                res = cook_gltf(str(src_file), str(target_sub))
+                cooked_count += len(res.get("model", [])) + len(res.get("animations", []))
+
     print(f"[+] Asset cooking complete: {cooked_count} cooked, {skipped_count} up-to-date.")
 
 
@@ -280,7 +290,15 @@ def cmd_run(args):
                 sys.exit(1)
     else:
         configured_emu = cfg["deploy"].get("emulator_bin", "ppsspp")
-        candidates = [configured_emu, "ppsspp", "PPSSPP.AppImage", "PPSSPPQt", "PPSSPPSDL"]
+        candidates = [
+            configured_emu,
+            "ppsspp",
+            "PPSSPP.AppImage",
+            "PPSSPPQt",
+            "PPSSPPSDL",
+            str(Path.home() / "psp_game_dev/emulators/ppsspp/ppsspp"),
+            str(Path.home() / "psp_game_dev/emulators/ppsspp/PPSSPP.AppImage")
+        ]
         for emu_name in candidates:
             cand_path = Path(emu_name).expanduser()
             if cand_path.is_file() and os.access(cand_path, os.X_OK):

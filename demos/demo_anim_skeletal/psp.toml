@@ -1,0 +1,14 @@
+[project]
+name = "demo_anim_skeletal"
+title = "PSP 3D Skeletal Animation Demo"
+version = "1.0.0"
+author = "PSP-Forge Team"
+
+[build]
+type = "prx"
+heap_size_kb = 20480
+
+[assets]
+source_dir = "assets"
+output_dir = "build/assets"
+clean_on_rebuild = false

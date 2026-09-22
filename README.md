@@ -108,6 +108,7 @@ The PSP hardware imposes strict memory and rasterizer constraints. The Asset Coo
 * **Zero Per-Frame Dynamic Allocation**: Zero allocations during the 60 FPS game loop. The 2 MB on-chip eDRAM is deterministically partitioned: Draw buffer ($544\text{ KiB}$), Display buffer ($544\text{ KiB}$), 16-bit Depth buffer ($272\text{ KiB}$), and Texture scratchpad ($688\text{ KiB}$). Dynamic allocations (`malloc`, `free`) are strictly confined to asset loading during scene transitions.
 * **Display List & Memory Management**: Safe 16-byte aligned GU Display Lists with D-Cache writeback (`sceKernelDcacheWritebackRange`) for uploaded textures, vertices, and audio DMA buffers.
 * **2D & 3D Pipelines**: Fast 2D sprite batching (`GU_SPRITES`), perspective projection, camera view matrix, articulated hierarchical node transforms (`forge_draw_mesh_node`), and distance-based virtual light culling.
+* **3D Skeletal Animation**: Hardware vertex skinning (`GU_WEIGHTS`, `sceGuBoneMatrix`), automated glTF/GLB cooker with $\le 8$ bone sub-mesh chunking, `.panm` animation clips with shortest-arc quaternion SLERP, and runtime crossfading (`forge_anim3d_crossfade`).
 * **Collision Engine**: Lightweight, allocation-free 2D primitives (`ForgeRect`, `ForgeCircle`) and 3D bounding volumes (`ForgeAABB`, `ForgeSphere`) with analytical intersection tests.
 * **2D Flipbook Animation**: Grid-based spritesheet player (`ForgeSpriteAnim`) with frame timing, UV coordinate computation, and playback loops.
 * **Scene Manager (`ForgeScene`)**: Lifecycle state machine (`on_init`, `on_update`, `on_draw`, `on_destroy`) enabling clean memory recycling between Title Menus and Gameplay levels in $24\text{ MB}$ RAM.
@@ -127,6 +128,7 @@ psp-forge/
 │   ├── cookers/               # Hardware-aware asset compilers
 │   │   ├── texture.py         # Swizzling, POT padding, CLUT quantization
 │   │   ├── mesh.py            # OBJ to binary .p3d parser + AABB bounds
+│   │   ├── gltf.py            # glTF/GLB parser, .panm clips, sub-mesh chunker
 │   │   └── audio.py           # WAV to PCM 44.1kHz transcoder
 │   └── templates/             # Project starter templates (2D & 3D)
 ├── runtime/                   # libpspforge (C99 Micro-Engine source)
@@ -137,6 +139,7 @@ psp-forge/
 │   │   ├── vram.c             # 2MB VRAM deterministic layout
 │   │   ├── video2d.c          # 2D Sprites & swizzled texture rendering
 │   │   ├── video3d.c          # 3D Meshes, matrices & 4 HW lights
+│   │   ├── anim3d.c           # Skeletal animation, SLERP & multi-chunk renderer
 │   │   ├── input.c            # Differential button & analog polling
 │   │   ├── physics.c          # 2D & 3D collision detection
 │   │   ├── anim.c             # 2D flipbook sprite animation
@@ -147,6 +150,7 @@ psp-forge/
 │   ├── demo_anim_2d/          # 2D animated knight with flipbook spritesheet
 │   ├── demo_anim_3d/          # Floating rotating 3D gem with lighting
 │   ├── demo_anim_3d_v2/       # 3D articulated humanoid rig with walk/jump/slash
+│   ├── demo_anim_skeletal/    # 3D smooth skinned glTF character with 11 animation clips
 │   ├── demo_scenes/           # Title Menu <-> Game state transitions
 │   └── demo_collisions/       # AABB and Circle collision detection & audio
 ├── docs/                      # Full documentation, tutorials, and API reference
@@ -201,15 +205,15 @@ See [docs/INSTALLATION.md](docs/INSTALLATION.md) for complete from-scratch toolc
 
 ## 🕹️ Showcase Demos
 
-Five complete, standalone showcase demos are provided in `demos/`. All demos feature 100% copyright-free procedural assets and run at a rock-solid **60 FPS** on real PSP hardware and PPSSPP:
+Six complete, standalone showcase demos are provided in `demos/`. All demos feature 100% copyright-free procedural assets and run at a rock-solid **60 FPS** on real PSP hardware and PPSSPP:
 
 <div align="center">
 
 | **2D Animation** (`demo_anim_2d`) | **3D Animation** (`demo_anim_3d`) | **3D Humanoid V2** (`demo_anim_3d_v2`) |
 |:---:|:---:|:---:|
 | <img src="docs/media/demo_anim_2d.png" width="280" alt="2D Animation Demo" /> | <img src="docs/media/demo_anim_3d.png" width="280" alt="3D Animation Demo" /> | <img src="docs/media/demo_anim_3d_v2.png" width="280" alt="3D Humanoid Demo" /> |
-| **Scene Manager** (`demo_scenes`) | **Collisions** (`demo_collisions`) | **3D Runner Template** (`3d_runner`) |
-| <img src="docs/media/demo_scenes.png" width="280" alt="Scene Manager Demo" /> | <img src="docs/media/demo_collisions.png" width="280" alt="Collisions Demo" /> | <img src="docs/media/template_3d.png" width="280" alt="3D Runner Template" /> |
+| **Scene Manager** (`demo_scenes`) | **Collisions** (`demo_collisions`) | **3D Skeletal Animation** (`demo_anim_skeletal`) |
+| <img src="docs/media/demo_scenes.png" width="280" alt="Scene Manager Demo" /> | <img src="docs/media/demo_collisions.png" width="280" alt="Collisions Demo" /> | <img src="docs/media/template_3d.png" width="280" alt="3D Skeletal Demo" /> |
 
 </div>
 
@@ -218,6 +222,7 @@ Five complete, standalone showcase demos are provided in `demos/`. All demos fea
 | **2D Animation** | [`demos/demo_anim_2d/`](demos/demo_anim_2d/) | 60 FPS flipbook sprite animation via `ForgeSpriteAnim`, dynamic state switching (Walk/Idle) | `walker_sheet.png` (4-frame $32\times 32$ sheet), UI icons |
 | **3D Animation** | [`demos/demo_anim_3d/`](demos/demo_anim_3d/) | Floating crystal with sinusoidal bobbing ($Y$), tilt ($X$), continuous rotation ($Y$), and orbital camera | `gem.obj`, `gem.png`, `pedestal.obj`, `pedestal.png` |
 | **3D Humanoid V2** | [`demos/demo_anim_3d_v2/`](demos/demo_anim_3d_v2/) | Articulated humanoid rig with `pspgum` matrix cascade, walk/run cycle, jump physics, sword slash, 360° orbiting camera | `knight_bot.png`, `arena.png`, `shadow.png`, modular OBJ body parts |
+| **3D Skeletal Anim** | [`demos/demo_anim_skeletal/`](demos/demo_anim_skeletal/) | Continuous vertex skinning, 11 `.panm` animation clips with crossfading, multi-chunk sub-mesh rendering ($\le 8$ bones/chunk) | `character.glb`, 11 cooked `.panm` clips, extracted texture |
 | **Scene Manager** | [`demos/demo_scenes/`](demos/demo_scenes/) | Clean Title Menu $\leftrightarrow$ Game transitions with automated memory freeing in 24 MB RAM | `menu_banner.png`, `player.png`, synthesized `click.wav` |
 | **Collisions** | [`demos/demo_collisions/`](demos/demo_collisions/) | Solid AABB obstacles (`rect_rect`) and collectible coins (`rect_circle`) with audio chime | `box_player.png`, `coin_item.png`, synthesized `collect.wav` |
 

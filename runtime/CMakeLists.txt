@@ -24,6 +24,7 @@ set(PSPFORGE_SOURCES
     src/audio.c
     src/physics.c
     src/anim.c
+    src/anim3d.c
     src/scene.c
 )
 
