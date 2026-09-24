@@ -1,10 +1,11 @@
-# Tutorial: Procedural & Hierarchical 3D Animation 💎⚔️
+# Tutorial: 3D Animation (Procedural, Hierarchical & Skeletal Skinning) 💎⚔️
 
-This tutorial explains how to implement 3D animations on the Sony PSP leveraging the hardware matrix stack (`pspgum`), procedural kinematics, and high-performance mathematics—targeting smooth 60 FPS without overloading the 333 MHz MIPS CPU.
+This tutorial explains how to implement 3D animations on the Sony PSP leveraging the hardware matrix stack (`pspgum`), procedural kinematics, high-performance mathematics, and hardware vertex skinning—targeting smooth 60 FPS without overloading the 333 MHz MIPS CPU.
 
-Two complete showcase demos are included in PSP-Forge:
+Three complete showcase demos are included in PSP-Forge:
 1. **Procedural Floating Gem**: `demos/demo_anim_3d/` (Harmonic oscillations, tilt, and continuous rotation)
 2. **Hierarchical Humanoid Knight**: `demos/demo_anim_3d_v2/` (Full articulated humanoid rig with walk cycle, jump, attack, and arena)
+3. **Continuous Skeletal Humanoid**: `demos/demo_anim_skeletal/` (glTF/GLB asset cooking, bone palettes, multi-chunk skinning, multi-clip state machine, camera-relative locomotion)
 
 ---
 
@@ -210,74 +211,269 @@ sceGumPopMatrix();
 
 ---
 
-## 6. Part 3: Skeletal Skinning & glTF Animation (`demo_anim_skeletal`)
+## 6. Part 3: Continuous Skeletal Animation (`demo_anim_skeletal`)
 
-While hierarchical rigid models (Mode A) work wonderfully for armored knights and robots, organic characters (such as humanoids with clothing, anime characters, or creatures) require **smooth continuous skinning** across joints (Mode B).
+<div align="center">
+  <img src="media/demo_anim_skeletal.png" width="560" alt="3D Skeletal Animation Demo Running on PPSSPP" />
+  <p><em>Continuous skeletal skinning with hardware bone blending, multi-clip animation player, and camera-relative locomotion at 60 FPS.</em></p>
+</div>
 
-PSP-Forge provides a complete automated glTF skeletal pipeline:
+While hierarchical rigid models (Mode A) work wonderfully for armored knights and mechas, organic characters (such as humanoids with clothing, anime characters, or creatures) require **smooth continuous skinning** across joints (Mode B).
 
-```text
-3D Rigged Model (glTF / GLB)
-     │
-     ├── Triangle Clustering (cli/cookers/gltf.py)
-     │    └── Subdivides mesh into sub-chunks referencing <= 8 local bones
-     │
-     ├── Material Atlas Fusion
-     │    └── Packs multiple materials into one 512x512 texture & remaps UVs
-     │
-     ├── Auto-Chroma Keying
-     │    └── Detects solid neutral matte background of facial features -> transparent
-     │
-     └── Animation Baking (.panm)
-          └── Samples keyframes at 30 FPS, compresses to 16-byte fixed samples
+---
+
+### Step-by-Step Guide: Reproducing the Skeletal Demo from Scratch
+
+Here is the exact step-by-step workflow to reproduce this 3D skeletal character demo in a brand new project using only `psp-forge` CLI commands and standard C99 code.
+
+#### Step 1: Scaffold a New Project
+Run `psp-forge init` with the `--template 3d` flag:
+```bash
+psp-forge init my_skeletal_demo --template 3d
+cd my_skeletal_demo
+```
+This generates the project folder structure with `CMakeLists.txt`, `psp.toml`, and the `assets/` directory.
+
+#### Step 2: Prepare your 3D Rigged Character (`.glb` / `.gltf`)
+Copy your rigged glTF or binary GLB file into `assets/` (for example, named `character.glb`):
+```bash
+cp /path/to/character.glb assets/character.glb
 ```
 
-### Mode A vs Mode B Comparison
+> [!IMPORTANT]
+> **glTF Asset Requirements & Limits**:
+> 1. **Bone Count**: The skeleton must not exceed **96 bones** (`FORGE_MAX_BONES = 96`). Most humanoids with fingers and face bones use between 40 and 78 bones.
+> 2. **Vertex Weights**: Each vertex should have at most 4 active joint influences in glTF (`JOINTS_0`, `WEIGHTS_0`).
+> 3. **Materials**: Multiple materials and embedded textures are supported! The cooker automatically packs them into a single $512 \times 512$ master texture atlas with UV remapping.
 
-| Feature | Mode A (Rigid Hierarchical) | Mode B (Skinned Mesh Chunks) |
-|---|---|---|
-| **Best suited for** | Mechas, segmented armor, vehicles, robots | Humans, organic creatures, cloth, hair |
-| **Joint Deformation** | Rigid mesh per node (no bending at vertices) | Smooth vertex blending (`GU_WEIGHTS`) |
-| **Bone Limit** | Arbitrary tree depth (uses `pspgum` stack) | Up to 96 bones in skeleton, $\le 8$ per chunk |
-| **GPU Execution** | Single world transform per draw call | Up to 8 bone matrices loaded to `sceGuBoneMatrix` |
-| **Asset Format** | Separate `.obj` / `.p3d` files per limb | Single unified `.p3d` (P3D2 multi-chunk) |
-| **Implementation** | `forge_draw_mesh_node()` or `pspgum` cascade | `forge_model3d_draw(model, &animator, tex)` |
+#### Step 3: Cook the Assets with `psp-forge cook`
+Run the asset cooker:
+```bash
+psp-forge cook
+```
 
-### Practical Code Example: Skeletal Character Loop
+The cooker executes the following hardware transformations automatically:
+1. **Mesh Chunking**: Scans all triangles. Whenever a cluster of triangles references more than 8 unique bones, it splits the geometry into separate sub-mesh chunks, each referencing $\le 8$ local bones.
+2. **Bone Palette Mapping**: Writes a local 8-byte palette (`bone_palette[8]`) into each chunk header and remaps vertex bone weight slots to indices `0..7`.
+3. **Material Atlas Fusion**: Fuses multiple material textures into `build/assets/character.tex` ($512 \times 512$ swizzled POT format) and recalculates the UV coordinates for all vertices.
+4. **Auto-Chroma Keying**: Scans textures for solid neutral backgrounds (e.g., solid gray around eyelashes or eyebrows) and converts them to transparent alpha (`A = 0`).
+5. **Animation Baking**: Detects all animation tracks inside the GLB (e.g., `iddle`, `walk`, `run`, `jump`, `flip`) and compiles each into a separate compressed binary file:
+   - `build/assets/character.p3d` (P3D2 Multi-Chunk model)
+   - `build/assets/character.tex` (Fused texture atlas)
+   - `build/assets/character_anim_<name>.panm` (Baked 30 FPS animation clips)
+
+#### Step 4: Write the C99 Game Engine Code (`src/main.c`)
+Replace the contents of `src/main.c` with the following implementation:
+
 ```c
-// 1. Load cooked assets
-ForgeModel3D* model = forge_model3d_load("assets/character.p3d");
-ForgeTexture* tex   = forge_texture_load("assets/character.tex");
-ForgeAnimClip* clip = forge_anim3d_load("assets/character_walk.panm");
+#include <psp_forge.h>
+#include <stdio.h>
+#include <math.h>
 
-// 2. Initialize animator
-ForgeAnimator anim;
-forge_anim3d_init(&anim);
-forge_anim3d_play(&anim, clip, true);
+PSP_MODULE_INFO("MY_SKELETAL_DEMO", 0, 1, 0);
+PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 
-// 3. Enable hardware alpha testing for eyelashes/eyes/hair cutouts
-forge_set_alpha_test(true, 128);
+typedef enum {
+    STATE_IDLE = 0,
+    STATE_WALK,
+    STATE_RUN,
+    STATE_ACTION
+} CharacterState;
 
-// Inside 60 FPS frame loop:
-float dt = forge_get_delta_time();
-forge_anim3d_update(&anim, model, dt);
+int main(int argc, char* argv[]) {
+    // 1. Initialize base directory and PSP-Forge engine
+    if (argc > 0 && argv && argv[0]) {
+        forge_set_base_path(argv[0]);
+    }
+    forge_init(0);
 
-// Camera-relative controls:
-// Calculate movement vector aligned with camera orbital angle
-float move_x = input.analog_x * cosf(cam_angle) - input.analog_y * sinf(cam_angle);
-float move_z = input.analog_x * sinf(cam_angle) + input.analog_y * cosf(cam_angle);
+    // 2. Load 3D Skeletal Model and Fused Texture Atlas
+    ForgeModel3D* model = forge_model3d_load("assets/character.p3d");
+    ForgeTexture* tex   = forge_texture_load("assets/character.tex");
 
-sceGumPushMatrix();
-{
-    ScePspFVector3 pos = { char_x, char_y, char_z };
-    ScePspFVector3 rot = { 0.0f, facing_angle, 0.0f };
-    sceGumTranslate(&pos);
-    sceGumRotateXYZ(&rot);
+    // 3. Enable Hardware Alpha Testing for eye/hair transparent cutouts
+    forge_set_alpha_test(true, 0x20);
 
-    forge_model3d_draw(model, &anim, tex);
+    // 4. Load Baked Animation Clips (.panm)
+    ForgeAnimClip* clip_idle = forge_anim3d_load("assets/character_anim_iddle.panm");
+    ForgeAnimClip* clip_walk = forge_anim3d_load("assets/character_anim_walk.panm");
+    ForgeAnimClip* clip_run  = forge_anim3d_load("assets/character_anim_run.panm");
+    ForgeAnimClip* clip_jump = forge_anim3d_load("assets/character_anim_jump.panm");
+    ForgeAnimClip* clip_flip = forge_anim3d_load("assets/character_anim_flip.panm");
+
+    // 5. Initialize Animator and Play Default Idle Animation
+    ForgeAnimator animator;
+    forge_anim3d_init(&animator);
+    if (clip_idle) {
+        forge_anim3d_play(&animator, clip_idle, true);
+    }
+
+    // 6. Setup Directional / Ambient Lighting
+    forge_set_light(0,  0.0f,  5.0f, -3.0f, 0xFFFFFFFF, 2.5f);
+    forge_set_light(1,  3.0f,  2.0f,  4.0f, 0xFF80B0FF, 1.8f);
+    sceGuAmbient(0xFF383838);
+
+    // Character locomotion & Camera orbit state
+    CharacterState state = STATE_IDLE;
+    float char_x = 0.0f, char_y = 0.0f, char_z = 0.0f, char_yaw = 0.0f;
+    float cam_dist = 3.2f, cam_yaw = 3.14159f, cam_pitch = 0.35f;
+
+    ForgeInput in;
+
+    while (forge_is_running()) {
+        forge_input_poll(&in);
+        float dt = forge_get_delta_time();
+
+        // --- Camera Orbit Controls (L / R Triggers) ---
+        if (forge_input_is_held(&in, PSP_CTRL_LTRIGGER)) cam_yaw -= 2.0f * dt;
+        if (forge_input_is_held(&in, PSP_CTRL_RTRIGGER)) cam_yaw += 2.0f * dt;
+
+        // --- Analog Stick / D-Pad Movement Input ---
+        float move_x = in.analog_x;
+        float move_y = in.analog_y;
+        if (forge_input_is_held(&in, PSP_CTRL_LEFT))  move_x = -1.0f;
+        if (forge_input_is_held(&in, PSP_CTRL_RIGHT)) move_x =  1.0f;
+        if (forge_input_is_held(&in, PSP_CTRL_UP))    move_y = -1.0f;
+        if (forge_input_is_held(&in, PSP_CTRL_DOWN))  move_y =  1.0f;
+
+        float move_len = sqrtf(move_x * move_x + move_y * move_y);
+        if (move_len > 1.0f) {
+            move_x /= move_len;
+            move_y /= move_len;
+            move_len = 1.0f;
+        }
+
+        // --- Action Triggers (Cross = Jump, Square = Flip) ---
+        if (forge_input_is_pressed(&in, PSP_CTRL_CROSS) && state != STATE_ACTION) {
+            if (clip_jump) {
+                state = STATE_ACTION;
+                forge_anim3d_play(&animator, clip_jump, false);
+            }
+        } else if (forge_input_is_pressed(&in, PSP_CTRL_SQUARE) && state != STATE_ACTION) {
+            if (clip_flip) {
+                state = STATE_ACTION;
+                forge_anim3d_play(&animator, clip_flip, false);
+            }
+        }
+
+        // --- State Machine & Camera-Relative Locomotion ---
+        if (state == STATE_ACTION) {
+            if (animator.finished) {
+                state = STATE_IDLE;
+                if (clip_idle) forge_anim3d_play(&animator, clip_idle, true);
+            }
+        } else {
+            if (move_len > 0.15f) {
+                // Orient movement relative to current camera orbital yaw
+                float sin_cam = sinf(cam_yaw);
+                float cos_cam = cosf(cam_yaw);
+                float world_move_x = (-move_x * cos_cam + move_y * sin_cam);
+                float world_move_z = (-move_x * sin_cam - move_y * cos_cam);
+
+                float speed = (move_len > 0.6f) ? 2.4f : 1.2f;
+                if (move_len > 0.6f) {
+                    if (state != STATE_RUN && clip_run) {
+                        state = STATE_RUN;
+                        forge_anim3d_play(&animator, clip_run, true);
+                    }
+                } else {
+                    if (state != STATE_WALK && clip_walk) {
+                        state = STATE_WALK;
+                        forge_anim3d_play(&animator, clip_walk, true);
+                    }
+                }
+
+                char_x += world_move_x * speed * dt;
+                char_z += world_move_z * speed * dt;
+
+                // Smooth facing rotation towards motion angle
+                float target_yaw = atan2f(world_move_x, world_move_z);
+                float angle_diff = target_yaw - char_yaw;
+                while (angle_diff >  3.14159f) angle_diff -= 6.28318f;
+                while (angle_diff < -3.14159f) angle_diff += 6.28318f;
+                char_yaw += angle_diff * 14.0f * dt;
+            } else {
+                if (state != STATE_IDLE && clip_idle) {
+                    state = STATE_IDLE;
+                    forge_anim3d_play(&animator, clip_idle, true);
+                }
+            }
+        }
+
+        // --- Forward Kinematics Update ---
+        forge_anim3d_update(&animator, model, dt);
+
+        // --- Compute Orbiting Camera Position ---
+        float cam_eye_x = char_x + sinf(cam_yaw) * cosf(cam_pitch) * cam_dist;
+        float cam_eye_y = char_y + sinf(cam_pitch) * cam_dist + 0.8f;
+        float cam_eye_z = char_z - cosf(cam_yaw) * cosf(cam_pitch) * cam_dist;
+
+        // --- Render Frame ---
+        forge_begin_frame();
+        forge_clear(0xFF1C1412); // Midnight slate background
+
+        forge_set_camera(
+            cam_eye_x, cam_eye_y, cam_eye_z,
+            char_x, char_y + 0.8f, char_z,
+            60.0f
+        );
+
+        if (model) {
+            sceGumMatrixMode(GU_MODEL);
+            sceGumLoadIdentity();
+
+            ScePspFVector3 root_pos = { char_x, char_y, char_z };
+            sceGumTranslate(&root_pos);
+            sceGumRotateY(char_yaw);
+
+            // Dispatches all sub-chunks with hardware bone skinning
+            forge_model3d_draw(model, &animator, tex);
+        }
+
+        forge_end_frame();
+    }
+
+    // 7. Cleanup Resources
+    if (clip_idle) forge_anim3d_free(clip_idle);
+    if (clip_walk) forge_anim3d_free(clip_walk);
+    if (clip_run)  forge_anim3d_free(clip_run);
+    if (clip_jump) forge_anim3d_free(clip_jump);
+    if (clip_flip) forge_anim3d_free(clip_flip);
+    if (model)     forge_model3d_free(model);
+    if (tex)       forge_texture_free(tex);
+
+    forge_shutdown();
+    sceKernelExitGame();
+    return 0;
 }
-sceGumPopMatrix();
 ```
+
+#### Step 5: Build and Run
+Compile and test the project:
+```bash
+# Build native MIPS EBOOT.PBP
+psp-forge build
+
+# Run in PPSSPP
+psp-forge run
+```
+
+---
+
+### Key Architectural Details Explained
+
+#### 1. Why `forge_set_alpha_test(true, 0x20)` is Essential
+Modern 3D characters often model eyelashes, eyebrows, and hair tips as semi-transparent quads mapped over the face geometry.
+- If you use alpha blending (`GU_BLEND`), polygons must be sorted back-to-front on the Allegrex CPU every frame; otherwise, a quad drawn first will write to the depth buffer and occlude the eye beneath it.
+- `forge_set_alpha_test(true, 0x20)` configures the PSP Graphics Engine to **discard** any pixel with alpha $< 32$ *before* writing to the depth buffer. Discarded pixels do not update the Z-buffer, meaning the eye underneath renders perfectly without any CPU sorting!
+
+#### 2. Camera-Relative Movement
+When the camera rotates around the character, pressing "Up" on the analog stick should always move the character *away from the camera*, not along the absolute world $Z$ axis.
+The coordinate transformation uses the camera orbital yaw ($\theta_{\text{cam}}$):
+$$\Delta X = -\text{move}_x \cdot \cos(\theta_{\text{cam}}) + \text{move}_y \cdot \sin(\theta_{\text{cam}})$$
+$$\Delta Z = -\text{move}_x \cdot \sin(\theta_{\text{cam}}) - \text{move}_y \cdot \cos(\theta_{\text{cam}})$$
+
+The character's facing orientation is then smoothly interpolated to the motion angle via $\text{atan2}(\Delta X, \Delta Z)$.
 
 ---
 
@@ -310,12 +506,21 @@ psp-forge build
 psp-forge run
 ```
 
+### Run Demo 3 (Continuous Skeletal Humanoid):
+```bash
+cd demos/demo_anim_skeletal
+psp-forge cook
+psp-forge build
+psp-forge run
+```
+
 ### Interactive Controls (Demo V2 & Skeletal Demo):
 | Button | Action |
 |---|---|
-| **Analog Stick / D-Pad** | Walk & Run across the 3D arena (Camera-relative) |
-| **Cross ($\times$)** | Ballistic Jump with dynamic shadow scaling |
-| **Square ($\square$)** | Energy Sword Slash combo |
+| **Analog Stick / D-Pad** | Walk & Run across the 3D space (Camera-relative) |
+| **Cross ($\times$)** | Jump Action Animation |
+| **Square ($\square$)** | Flip / Sword Slash Action Animation |
 | **L / R Triggers** | Smooth 360° Orbiting Camera |
 | **Start** | Reset position to center |
+
 

@@ -215,7 +215,7 @@ Six complete, standalone showcase demos are provided in `demos/`. All demos feat
 |:---:|:---:|:---:|
 | <img src="docs/media/demo_anim_2d.png" width="280" alt="2D Animation Demo" /> | <img src="docs/media/demo_anim_3d.png" width="280" alt="3D Animation Demo" /> | <img src="docs/media/demo_anim_3d_v2.png" width="280" alt="3D Humanoid Demo" /> |
 | **Scene Manager** (`demo_scenes`) | **Collisions** (`demo_collisions`) | **3D Skeletal Animation** (`demo_anim_skeletal`) |
-| <img src="docs/media/demo_scenes.png" width="280" alt="Scene Manager Demo" /> | <img src="docs/media/demo_collisions.png" width="280" alt="Collisions Demo" /> | <img src="docs/media/template_3d.png" width="280" alt="3D Skeletal Demo" /> |
+| <img src="docs/media/demo_scenes.png" width="280" alt="Scene Manager Demo" /> | <img src="docs/media/demo_collisions.png" width="280" alt="Collisions Demo" /> | <img src="docs/media/demo_anim_skeletal.png" width="280" alt="3D Skeletal Demo" /> |
 
 </div>
 
