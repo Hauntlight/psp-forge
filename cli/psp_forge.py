@@ -170,12 +170,15 @@ def cmd_cook(args):
                 cooked_count += 1
 
             elif ext in [".gltf", ".glb"]:
-                dst_model = target_sub / f"{src_file.stem}.p3d"
+                no_engine = getattr(args, "no_engine", False)
+                dst_ext = ".p3dx" if no_engine else ".p3d"
+                dst_model = target_sub / f"{src_file.stem}{dst_ext}"
                 if not force and dst_model.exists() and dst_model.stat().st_mtime >= src_file.stat().st_mtime:
                     skipped_count += 1
                     continue
-                print(f"[+] Cooking 3D glTF/GLB model & animations: {src_file}")
-                res = cook_gltf(str(src_file), str(target_sub))
+                mode_str = "Agnostic .p3dx" if no_engine else "libpspforge .p3d"
+                print(f"[+] Cooking 3D glTF/GLB model & animations ({mode_str}): {src_file}")
+                res = cook_gltf(str(src_file), str(target_sub), no_engine=no_engine)
                 cooked_count += len(res.get("model", [])) + len(res.get("animations", []))
 
     print(f"[+] Asset cooking complete: {cooked_count} cooked, {skipped_count} up-to-date.")
@@ -356,6 +359,7 @@ def main():
     # cook
     p_cook = subparsers.add_parser("cook", help="Compile and optimize graphics, mesh, and audio assets")
     p_cook.add_argument("--force", action="store_true", help="Force recompilation of all assets")
+    p_cook.add_argument("--no-engine", action="store_true", help="Agnostic cooking: preserve multiple textures, original UVs, skip bone reduction, output .p3dx")
 
     # build
     p_build = subparsers.add_parser("build", help="Compile C source and package EBOOT.PBP")
@@ -365,6 +369,7 @@ def main():
     p_build.add_argument("--error-handler", action="store_true", help="Compatibility flag (handled safely in user mode without kernel stubs)")
     p_build.add_argument("--docker", action="store_true", help="Build inside official PSPDEV Docker container")
     p_build.add_argument("--force", action="store_true", help="Force rebuild of cooked assets")
+    p_build.add_argument("--no-engine", action="store_true", help="Agnostic cooking: preserve multiple textures, original UVs, skip bone reduction, output .p3dx")
 
     # run
     p_run = subparsers.add_parser("run", help="Launch compiled game on PPSSPP emulator")

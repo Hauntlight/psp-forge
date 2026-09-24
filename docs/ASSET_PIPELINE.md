@@ -113,35 +113,143 @@ forge_sound_free(sound);
 
 ---
 
-## 4. Skeletal 3D Models & Animations: glTF / GLB to `.p3d` & `.panm`
+## 4. Skeletal 3D Models & Animations: glTF / GLB to `.p3d` / `.p3dx` & `.panm`
 
-The PSP Graphics Engine supports hardware vertex skinning for up to **8 bone matrices** (`GU_WEIGHTS(n)`, `sceGuBoneMatrix(0..7)`). For modern 3D models (which typically have 20–80 bones), PSP-Forge introduces an automated **Mesh Chunking Pipeline**, **Material Atlas Fusion**, and a forward kinematics clip format (`.panm`).
+The PSP Graphics Engine supports hardware vertex skinning for up to **8 bone matrices** (`GU_WEIGHTS(n)`, `sceGuBoneMatrix(0..7)`). For modern 3D models (which typically have 20–120+ bones), PSP-Forge provides a **Dual-Mode Cooker** (`cli/cookers/gltf.py`):
 
-| Source Format | Cooked PSP Format | Cooker Module | Optimizations Performed |
-|---|---|---|---|
-| `.gltf`, `.glb` | **`.p3d` (P3D2 Multi-Chunk)** | `cli/cookers/gltf.py` | Triangle clustering into $\le 8$ bone chunks, local bone index remapping, vertex weight normalization |
-| `.gltf`, `.glb` (Animations) | **`.panm`** (Skeletal Animation) | `cli/cookers/gltf.py` | Keyframe baking at 30 FPS, quaternion SLERP, 16-byte fixed samples |
-| Embedded Textures | **`.tex`** (PSP Texture) | `cli/cookers/gltf.py` | Material Fusion (atlas packing + UV remapping), auto chroma-keying of neutral background mats, POT padding |
+```
+                              [File 3D glTF / GLB]
+                                       │
+              ┌────────────────────────┴────────────────────────┐
+              ▼                                                 ▼
+  [Default: psp-forge cook]                        [Flag: --no-engine]
+  Modalità "libpspforge Engine"                    Modalità "Toolchain Agnostica"
+  ─────────────────────────────                    ──────────────────────────────
+  • Formato: .p3d (Magic: P3D2)                    • Formato: .p3dx (Magic: P3DX)
+  • Max 96 ossa (Bone Reduction se > 96)           • Ossa illimitate (Nessuna riduzione)
+  • Material Atlas Fusion (1 sola texture 512x512) • Multi-Materiale (texture separate .tex)
+  • UV rimappate su griglia atlante                • UV originali preservate intatte
+  • Auto-Chroma Keying per cutouts                 • Nessun Chroma Keying forzato
+  • Chunks divisi solo per <= 8 ossa               • Chunks divisi per Material ID + <= 8 ossa
+```
 
-### Two Architectural Modes Supported:
-1. **Mode A: Hierarchical Rigid Meshes (Tekken 1–3 Style)**:
-   - For articulated models without continuous skinning (mechas, segmented armor, robots).
-   - Each limb or section is an independent mesh attached to a bone node (`node_index >= 0`).
-   - Evaluated using `pspgum` matrix stack operations (`sceGumPushMatrix()` / `sceGumPopMatrix()`).
-   - Completely bypasses the 8-bone hardware limit since each draw call uses only the active node matrix.
-2. **Mode B: Continuous Skinning with Mesh Chunking**:
-   - For organic, smooth-skinned characters (up to **96 bones** total in the skeleton hierarchy).
-   - The cooker partitions triangles so that **each sub-mesh chunk references at most 8 unique bones**.
-   - Generates local bone palettes (`bone_palette[8]`) and remaps vertex bone indices (`0..7`).
-   - At runtime, `forge_model3d_draw()` binds the active chunk's skinning matrices to hardware bone registers (`sceGuBoneMatrix(0..7)`) and dispatches native hardware-blended draw calls (`GU_WEIGHTS(1..8) | GU_WEIGHT_32BITF | GU_TEXTURE_32BITF | GU_NORMAL_32BITF | GU_VERTEX_32BITF | GU_TRANSFORM_3D`).
+| Mode | Command Flag | Output Model | Textures | Max Bones | Primary Target |
+|---|---|---|---|---|---|
+| **Engine Mode** | *(default)* | `.p3d` (`P3D2`) | Single `$512 \times 512$` Atlas (`.tex`) | **96** (Reduced) | `libpspforge` Micro-Engine |
+| **Agnostic Mode** | `--no-engine` | `.p3dx` (`P3DX`) | Separate `.tex` per material | **Unlimited** | Raylib-PSP, SDL, OSLib, Custom C/C++ Engines |
 
-### Automatic Material Fusion & Chroma Keying:
-Real-world glTF characters frequently come with multiple separate materials (e.g. skin, clothes, eyes, hair). On the PSP:
-- Switching textures per draw call (`sceGuTexImage`) causes heavy pipeline stalls and Display List bloat.
-- The `gltf.py` cooker automatically packs all textures referenced by the model into a single **$512 \times 512$ master texture atlas** (`<model>.tex`), automatically recalculating and remapping the $(U, V)$ coordinates for every vertex.
-- **Auto-Chroma Keying**: When eye or eyebrow textures are painted over a solid neutral matte background (e.g. RGB 128, 128, 128), the cooker automatically detects and converts the background to transparent alpha (`A = 0`), preventing solid opaque boxes from hiding the character's face.
+---
 
-### Loading and Animating in C:
+### Pipeline 1: Default (`psp-forge cook`) — Optimized for `libpspforge`
+
+The default mode packages assets precisely as expected by the `libpspforge` runtime, eliminating runtime GPU state changes and fitting comfortably within the PSP's 24 MB RAM budget.
+
+#### A. Hardware Constraints & Automatic Optimizations
+1. **Bone Limit & Reduction:** Maximum 96 bones (`FORGE_MAX_BONES = 96`). If a model exceeds 96 bones, the cooker automatically executes **Bone Reduction & Compounding** (see below).
+2. **Material Atlas Fusion:** All textures are packed into a single $512 \times 512$ master texture atlas (`<model>.tex`), and vertex UV coordinates are automatically remapped to the atlas sub-rectangles. If no textures are present, a clean $16 \times 16$ white default atlas is emitted.
+3. **Auto-Chroma Keying:** Neutral matte background pixels on cutout textures (e.g. solid grey behind eyelashes/hair) are automatically keyed out to full transparency (`alpha = 0`).
+4. **Hardware Mesh Chunking:** Polygons are partitioned into sub-mesh chunks referencing at most 8 unique bones, with local bone palettes (`bone_palette[8]`).
+
+#### B. Bone Reduction & Compounding Engine
+When a skeleton exceeds 96 bones, the cooker deterministically prunes low-impact bones down to 96 while preserving geometric fidelity:
+
+* **Pruning Priority (Order of elimination):**
+  1. *Zero-weight terminal bones:* IK helpers, nub bones, leaf nodes with zero vertex weights.
+  2. *Facial bone details:* Eyelids, jaw, lips, tongue, brow collapsed into the `Head` parent bone.
+  3. *Distal & intermediate finger phalanges:* Intermediate and fingertip bones collapsed into proximal finger joints or the `Hand` palm bone.
+  4. *Twist & auxiliary bones:* Segment twist bones (e.g. `arm_twist`) collapsed into the segment parent bone (`upper_arm`).
+  5. *Leaf bones with smallest weight sum:* Smallest total weight contributors merged into their respective parents.
+
+* **Weight Collapsing (Vertex Influence Fusion):**
+  For each bone $B$ pruned into parent $P$, any vertex referencing $B$ with weight $w_B$:
+  - If $P$ is already an influence of the vertex with weight $w_P$, update $w_P \leftarrow w_P + w_B$.
+  - If $P$ is not present, replace the bone reference $B \rightarrow P$ with weight $w_B$.
+  - Renormalize all vertex weights: $w_i = \frac{w_i}{\sum_k w_k}$.
+
+* **Transform Compounding (Animation Curves):**
+  If pruned bone $B$ has remaining children $C$, the relative motion of $B$ is compounded into $C$ for every sampled 30 FPS animation frame in `.panm`:
+  $$M_{C \to P}(t) = M_{B \to P}(t) \times M_{C \to B}(t)$$
+  The compounded rotation quaternion is normalized ($\|q\| = 1.0$) and relative translation is updated, ensuring zero visual disruption.
+
+#### C. Binary Layout: `.p3d` (P3D2)
+```c
+typedef struct __attribute__((packed)) {
+    char     magic[4];       /* "P3D2" */
+    uint16_t version;        /* 2 */
+    uint16_t bone_count;     /* <= 96 */
+    uint16_t chunk_count;    /* Number of sub-mesh chunks */
+    uint8_t  reserved[8];
+} P3d2Header;
+
+typedef struct __attribute__((packed)) {
+    int16_t  node_index;      /* -1 = skinned, >= 0 = rigid bone */
+    uint8_t  num_local_bones; /* 1..8 */
+    uint8_t  bone_palette[8]; /* Maps local index (0..7) to global bone */
+    uint32_t vertex_format;   /* GU_WEIGHTS(n) | GU_TEXTURE_32BITF | ... */
+    uint16_t vertex_stride;
+    uint32_t vertex_count;
+    float    aabb_min[3];
+    float    aabb_max[3];
+    float    center[3];
+    float    radius;
+    uint8_t  reserved[4];
+} P3d2ChunkHeader;
+```
+
+---
+
+### Pipeline 2: Agnostic Mode (`psp-forge cook --no-engine`)
+
+For developers building homebrew with external frameworks (Raylib-PSP, SDL, OSLib, or custom engines), the `--no-engine` flag transforms `psp-forge` into an open Swiss Army Knife asset compiler.
+
+```bash
+# Cook glTF model in Agnostic Mode:
+psp-forge cook --no-engine
+
+# Or build the project using agnostic cooking:
+psp-forge build --no-engine
+```
+
+#### A. Key Features
+1. **Unlimited Bones (No Bone Reduction):** Skeletons are exported in full (104, 150, 200+ bones).
+2. **Multi-Material Texture Export:** Each material is exported as an independent `.tex` file (`<model>_<material>.tex`), automatically downsampled to $\le 512 \times 512$ if needed for PSP hardware limits, with authentic alpha channels (no auto-chroma keying).
+3. **Original UV Coordinates Preserved:** Vertex UV coordinates are never modified or remapped to an atlas grid.
+4. **Chunk Partitioning by Material ID:** Chunks are grouped primarily by `material_id` and secondarily partitioned into $\le 8$ local bones for developers who wish to utilize hardware skinning.
+
+#### B. Binary Layout: `.p3dx` (P3DX v1)
+```c
+typedef struct __attribute__((packed)) {
+    char     magic[4];       /* "P3DX" */
+    uint16_t version;        /* 1 */
+    uint16_t bone_count;     /* Any number (no bone reduction) */
+    uint16_t chunk_count;
+    uint16_t material_count; /* Number of associated materials/textures */
+    uint8_t  reserved[6];
+} P3dxHeader;
+
+/* Followed immediately by:
+   char material_names[material_count][32]; // Null-padded string table
+*/
+
+typedef struct __attribute__((packed)) {
+    int16_t  node_index;      /* -1 = skinned, >= 0 = rigid bone */
+    uint8_t  num_local_bones; /* 0..8 */
+    uint8_t  bone_palette[8];
+    uint16_t material_id;     /* Index into Material Name Table */
+    uint32_t vertex_format;
+    uint16_t vertex_stride;
+    uint32_t vertex_count;
+    float    aabb_min[3];
+    float    aabb_max[3];
+    float    center[3];
+    float    radius;
+    uint8_t  reserved[2];
+} P3dxChunkHeader;
+```
+
+---
+
+### Loading and Animating in C (`libpspforge`):
 ```c
 // 1. Load multi-chunk skinned model and shared atlas texture
 ForgeModel3D* model = forge_model3d_load("assets/character.p3d");
@@ -178,7 +286,7 @@ forge_texture_free(tex);
 ```
 
 ### Skeletal Model Asset Constraints & Rationale:
-- **Skeleton Limit**: Maximum 96 bones. *Rationale*: `ForgeAnimator` maintains statically sized matrix arrays (`world_matrices[96]`, `skin_matrices[96]`), consuming only $12.5\text{ KiB}$ to keep RAM footprint negligible on the 24 MB PSP.
+- **Skeleton Limit (Engine Mode)**: Maximum 96 bones. *Rationale*: `ForgeAnimator` maintains statically sized matrix arrays (`world_matrices[96]`, `skin_matrices[96]`), consuming only $12.5\text{ KiB}$ to keep RAM footprint negligible on the 24 MB PSP. If greater fidelity or more bones are required for custom engines, use `--no-engine` (`.p3dx`).
 - **Max Bones Per Vertex**: At most 4 non-zero weights per vertex in glTF. *Rationale*: Standard glTF attribute `JOINTS_0` / `WEIGHTS_0` supports 4 influences, which the cooker normalizes before assigning to the chunk's 8-bone palette.
 - **Max Unique Bones Per Chunk**: $\le 8$ bones. *Rationale*: The PSP Graphics Engine has exactly 8 hardware bone registers (`GU_WEIGHTS(1..8)`). Any mesh part with more than 8 bones is automatically split into multiple sub-mesh chunks by the cooker.
 

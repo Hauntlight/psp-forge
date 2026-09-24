@@ -380,6 +380,31 @@ typedef struct {
     ForgeModelChunk* chunks;
 } ForgeModel3D;
 
+/* Agnostic Toolchain Format (.p3dx) Definitions for External Engines */
+typedef struct __attribute__((packed)) {
+    char     magic[4];       /* "P3DX" */
+    uint16_t version;        /* 1 */
+    uint16_t bone_count;     /* Any number (no bone reduction) */
+    uint16_t chunk_count;
+    uint16_t material_count; /* Number of associated materials/textures */
+    uint8_t  reserved[6];
+} P3dxHeader;
+
+typedef struct __attribute__((packed)) {
+    int16_t  node_index;      /* -1 = skinned, >= 0 = rigid bone */
+    uint8_t  num_local_bones; /* 0..8 */
+    uint8_t  bone_palette[8];
+    uint16_t material_id;     /* Index of material in Material Name Table */
+    uint32_t vertex_format;
+    uint16_t vertex_stride;
+    uint32_t vertex_count;
+    float    aabb_min[3];
+    float    aabb_max[3];
+    float    center[3];
+    float    radius;
+    uint8_t  reserved[2];
+} P3dxChunkHeader;
+
 typedef struct {
     const ForgeAnimClip* clip;
     float                time;
@@ -429,5 +454,29 @@ To write high-performance 60 FPS homebrew on the Sony PSP, developers must respe
 | **VRAM Scratchpad Budget** | Max $688\text{ KiB}$ | Total on-chip eDRAM is exactly 2048 KiB. Draw ($544\text{ KiB}$), Display ($544\text{ KiB}$), and 16-bit Z-buffer ($272\text{ KiB}$) occupy $1360\text{ KiB}$, leaving exactly $688\text{ KiB}$ for the ultra-fast scratchpad. Textures that do not fit in scratchpad must remain in main RAM. |
 | **Virtual Light Culling** | Max 16 virtual lights, 4 active (`GU_LIGHT0..3`) | The PSP GE provides only 4 hardware directional/point light registers. `forge_cull_and_apply_lights()` culls up to 16 virtual scene lights by 3D distance and uploads the 4 closest to hardware registers each draw call. |
 | **Audio Chunk Alignment** | Multiples of 64 samples (128 bytes, 44.1 kHz PCM) | The PSP hardware audio DMAC processes DMA transfers in fixed 64-sample blocks. Buffer misalignment causes audio clicking, buffer underruns, or hardware channel lockups. |
+
+---
+
+## 12. CLI Toolchain Reference (`psp-forge`)
+
+The `psp-forge` CLI provides developer tooling to initialize, build, and package PSP projects:
+
+### Commands & Options:
+
+#### `psp-forge cook [OPTIONS]`
+Compiles source assets (`.png`, `.jpg`, `.obj`, `.gltf`, `.glb`, `.wav`, etc.) in `assets/` into binary hardware formats (`.tex`, `.p3d`, `.p3dx`, `.panm`, `.snd`).
+* `--no-engine`: **Agnostic Mode**. Cook assets for external engines (Raylib-PSP, SDL, OSLib, or custom engines). Disables bone reduction, preserves original vertex UVs, generates individual `.tex` textures per material, and writes multi-material `.p3dx` (Magic: `P3DX`) files.
+* `--format`: Default texture pixel format (`8888`, `5551`, `4444`, `5650`, `clut8`, `clut4`).
+* `--no-swizzle`: Disables texture swizzling (stores pixels linearly).
+
+#### `psp-forge build [OPTIONS]`
+Orchestrates cooking and compilation via `psp-cmake` and `make`, generating the final `EBOOT.PBP`.
+* `--no-engine`: Passes `--no-engine` to the asset cooker prior to building.
+* `--clean`: Removes `build/` directory before building.
+* `--debug`: Compiles in Debug mode with symbol information.
+
+#### `psp-forge run [OPTIONS]`
+Launches the built game in PPSSPP emulator or transfers to physical hardware via USB.
+
 
 

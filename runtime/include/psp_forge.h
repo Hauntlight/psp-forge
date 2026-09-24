@@ -206,6 +206,34 @@ typedef struct {
     ForgeModelChunk* chunks;
 } ForgeModel3D;
 
+/* ========================================================================= */
+/* Agnostic Toolchain Format (.p3dx) Definitions                             */
+/* ========================================================================= */
+
+typedef struct __attribute__((packed)) {
+    char     magic[4];       /* "P3DX" */
+    uint16_t version;        /* 1 */
+    uint16_t bone_count;     /* Any number (no bone reduction) */
+    uint16_t chunk_count;
+    uint16_t material_count; /* Number of associated materials/textures */
+    uint8_t  reserved[6];
+} P3dxHeader;
+
+typedef struct __attribute__((packed)) {
+    int16_t  node_index;      /* -1 = skinned, >= 0 = rigid bone */
+    uint8_t  num_local_bones; /* 0..8 */
+    uint8_t  bone_palette[8];
+    uint16_t material_id;     /* Index of material in Material Name Table */
+    uint32_t vertex_format;
+    uint16_t vertex_stride;
+    uint32_t vertex_count;
+    float    aabb_min[3];
+    float    aabb_max[3];
+    float    center[3];
+    float    radius;
+    uint8_t  reserved[2];
+} P3dxChunkHeader;
+
 typedef struct {
     const ForgeAnimClip* clip;
     float                time;
