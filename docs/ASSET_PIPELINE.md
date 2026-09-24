@@ -287,6 +287,7 @@ forge_texture_free(tex);
 
 ### Skeletal Model Asset Constraints & Rationale:
 - **Skeleton Limit (Engine Mode)**: Maximum 96 bones. *Rationale*: `ForgeAnimator` maintains statically sized matrix arrays (`world_matrices[96]`, `skin_matrices[96]`), consuming only $12.5\text{ KiB}$ to keep RAM footprint negligible on the 24 MB PSP. If greater fidelity or more bones are required for custom engines, use `--no-engine` (`.p3dx`).
+  - ⚠️ *Real Hardware Performance Guideline*: While the structural limit is 96 bones, **24–32 bones per rig** is the recommended design target for physical PSP hardware (Allegrex CPU @ 333 MHz). Evaluating FK and quaternion SLERP across 60–80 bones per frame on CPU can exhaust the 16.6 ms frame budget when multiple characters are active.
 - **Max Bones Per Vertex**: At most 4 non-zero weights per vertex in glTF. *Rationale*: Standard glTF attribute `JOINTS_0` / `WEIGHTS_0` supports 4 influences, which the cooker normalizes before assigning to the chunk's 8-bone palette.
 - **Max Unique Bones Per Chunk**: $\le 8$ bones. *Rationale*: The PSP Graphics Engine has exactly 8 hardware bone registers (`GU_WEIGHTS(1..8)`). Any mesh part with more than 8 bones is automatically split into multiple sub-mesh chunks by the cooker.
 

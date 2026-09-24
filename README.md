@@ -92,29 +92,29 @@ psp-forge run
 * **`psp-forge clean`**: Cleans the build directory and compiled assets.
 
 ### 2. Hardware-Aware Asset Cooker
-The PSP hardware imposes strict memory and rasterizer constraints. The Asset Cooker automatically converts assets and warns you before hitting hardware bottlenecks:
+The PSP hardware imposes strict memory and rasterizer constraints. The Asset Cooker automatically converts assets and guides developers around hardware bottlenecks:
 * **Texture Swizzling**: Interleaves pixel data into $16 \times 8$ byte tiles to eliminate GPU cache misses during texture sampling.
-* **Power-of-Two (POT) Padding**: Expands textures to $2^n$ dimensions (up to $512 \times 512$).
-* **Format Conversion & CLUT Quantization**: Supports `RGBA8888`, `RGBA5551`, `RGBA4444`, and indexed CLUT8 (256 colors) / CLUT4 (16 colors).
-* **Material Atlas Fusion & Auto-Chroma Keying**: Fuses multi-material glTF models into a single $512 \times 512$ master texture atlas with UV remapping, converting neutral matte backgrounds into transparent cutouts.
-* **Wavefront OBJ to `.p3d`**: Packs vertices into binary stream with 16-byte alignment, normals, texture coordinates, and precalculated AABB bounding boxes.
-* **glTF / GLB to Skeletal Mesh & Animations**: Decomposes complex rigs (up to 96 bones) into sub-mesh chunks referencing $\le 8$ local bones, generating `.p3d` and 30 FPS `.panm` animation clips.
-* **Audio Transcoder**: Resamples WAV/audio to signed 16-bit PCM at 44,100 Hz with 64-sample buffer alignment.
-* **Hardware Budget Warnings**:
+* **Power-of-Two (POT) Padding & Auto-Resizing**: Expands textures to $2^n$ dimensions up to $512 \times 512$. Source textures exceeding $512 \times 512$ are automatically downsampled to $512 \times 512$ via Lanczos filtering with a warning.
+* **Format Conversion & CLUT Quantization**: Supports `RGBA8888`, `RGBA5551`, `RGBA4444`, and indexed CLUT8 (256 colors) / CLUT4 (16 colors via Octree quantization).
+* **Material Atlas Fusion & Heuristic Chroma Keying**: Fuses multi-material glTF models into a single $512 \times 512$ texture atlas with UV remapping, with heuristic matte background keying for facial and accessory layers.
+* **Dual Export (.p3d & .p3dx)**: Exports engine-optimized `.p3d` models or format-agnostic `.p3dx` containers preserving original material topologies.
+* **glTF / GLB to Skeletal Mesh & Animations**: Decomposes rigs into sub-mesh chunks referencing $\le 8$ local bones for hardware vertex skinning, generating `.p3d` geometry and 30 FPS `.panm` animation tracks.
+* **Audio Transcoder & Streamer**: Resamples audio to signed 16-bit PCM at 44.1 kHz, with streaming support (`forge_music_*`) from Memory Stick to save RAM.
+* **Hardware Budget Warnings & Policies**:
   * ⚠️ Warns if 3D models exceed 3,000 triangles or 256 KB.
-  * 🛑 Hard errors if textures exceed the $512 \times 512$ hardware limit.
-  * ⚠️ Warns if texture VRAM footprint exceeds 512 KB (suggesting CLUT or 16-bit formats).
+  * ⚠️ Warns if input textures exceed $512 \times 512$ (auto-downsampling applied).
+  * ⚠️ Warns if texture VRAM footprint exceeds the recommended 512 KB budget (physical eDRAM scratchpad is 688 KB; 512 KB leaves safety headroom in the bump allocator).
   * ⚠️ Warns if uncompressed audio clips exceed 2 MB RAM.
 
 ### 3. C99 Micro-Engine (`libpspforge`)
-* **Zero Per-Frame Dynamic Allocation**: Zero allocations during the 60 FPS game loop. The 2 MB on-chip eDRAM is deterministically partitioned: Draw buffer ($544\text{ KiB}$), Display buffer ($544\text{ KiB}$), 16-bit Depth buffer ($272\text{ KiB}$), and Texture scratchpad ($688\text{ KiB}$). Dynamic allocations (`malloc`, `free`) are strictly confined to asset loading during scene transitions.
+* **Zero Per-Frame Dynamic Allocation (In-Game Loop)**: The 60 FPS gameplay simulation has zero allocations. Dynamic memory (`malloc`, `calloc`, `memalign`) is strictly restricted to asset loading/unloading during scene transitions. The 2 MB on-chip eDRAM is deterministically partitioned: Draw buffer ($544\text{ KiB}$), Display buffer ($544\text{ KiB}$), 16-bit Depth buffer ($272\text{ KiB}$), and a fast bump-allocated Texture scratchpad ($688\text{ KiB}$).
 * **Display List & Memory Management**: Safe 16-byte aligned GU Display Lists with D-Cache writeback (`sceKernelDcacheWritebackRange`) for uploaded textures, vertices, and audio DMA buffers.
 * **2D & 3D Pipelines**: Fast 2D sprite batching (`GU_SPRITES`), perspective projection, camera view matrix, articulated hierarchical node transforms (`forge_draw_mesh_node`), hardware alpha test control (`forge_set_alpha_test`), and distance-based virtual light culling.
-* **3D Skeletal Animation**: Native hardware vertex skinning (`GU_WEIGHTS`, `sceGuBoneMatrix`), support for skeletons up to 96 bones, sub-mesh chunking ($\le 8$ local bones per chunk), `.panm` animation playback with shortest-arc quaternion SLERP, and zero-allocation runtime sampling.
+* **3D Skeletal Animation**: Native hardware vertex skinning (`GU_WEIGHTS`, `sceGuBoneMatrix`), sub-mesh chunking ($\le 8$ local bones per chunk), and `.panm` animation playback with shortest-arc quaternion SLERP. *Architectural capacity supports rigs up to 96 bones, with 24–32 bones recommended per rig for guaranteed 60 FPS on the 333 MHz Allegrex CPU.*
 * **Collision Engine**: Lightweight, allocation-free 2D primitives (`ForgeRect`, `ForgeCircle`) and 3D bounding volumes (`ForgeAABB`, `ForgeSphere`) with analytical intersection tests.
 * **2D Flipbook Animation**: Grid-based spritesheet player (`ForgeSpriteAnim`) with frame timing, UV coordinate computation, and playback loops.
 * **Scene Manager (`ForgeScene`)**: Lifecycle state machine (`on_init`, `on_update`, `on_draw`, `on_destroy`) enabling clean memory recycling between Title Menus and Gameplay levels in $24\text{ MB}$ RAM.
-* **Multithreaded Audio**: Dedicated high-priority audio thread (`0x12`) feeding 512-sample stereo PCM chunks (`AUDIO_BUFFER_SAMPLES 512`) from RAM buffers, eliminating audio stutter even under 3D load.
+* **Multithreaded Audio**: Dedicated high-priority audio thread (`0x12`) feeding 512-sample stereo PCM chunks from RAM buffers or streaming streams directly from disk via DMA.
 
 ---
 
@@ -262,6 +262,13 @@ Every PSP-Forge project compiles with the `BUILD_PRX` directive enabled, ensurin
 * **Dynamic RAM Sizing**: Relies on Newlib's `_sbrk.c` dynamic heap allocation, avoiding hardcoded `PSP_HEAP_SIZE_KB` allocation failures.
 * **16-Byte DMA Alignment**: 16-byte alignment for display lists (`__attribute__((aligned(16)))`), textures (`memalign(16, size)`), and mesh vertices to prevent GPU bus error lockups.
 * **Non-Blocking Input**: Uses `sceCtrlPeekBufferPositive` to guarantee zero frame-loop hitching.
+
+### ⚠️ Real Hardware Performance Guidelines & Caveats
+Developing for real silicon requires respecting embedded hardware boundaries that high-end PC emulators mask:
+* **Avoid Synchronous In-Game Disk Reads**: The PSP Memory Stick PRO Duo bus throughput is **$3\text{--}7\text{ MB/s}$** with high seek latency. Loading or freeing heavy 3D assets/textures on button-presses (e.g. during rapid character selection) stalls the main thread. Always cache UI previews or preload models asynchronously during scene transitions.
+* **Skeletal Animation CPU Budget**: The C99 runtime calculates forward kinematics (FK), quaternion SLERP, and matrix transforms on the MIPS R4000 CPU before dispatching bones to the GE hardware. While rigs up to 96 bones are structurally supported, **$24\text{--}32$ bones per rig** is the recommended upper bound for steady 60 FPS gameplay with multiple active entities.
+* **Anime & Cel-Shaded Unlit Rendering**: The GE applies Gouraud vertex lighting via `GU_TFX_MODULATE`. For stylized or anime-style models without normal maps, disabling lights (`sceGuDisable(GU_LIGHTING)` with `GU_TFX_REPLACE`) avoids muddy dark shadows and preserves the 100% vibrant, original hand-painted texture colors at zero GPU arithmetic overhead.
+* **Texture Storage**: Favor indexed textures (`clut8` / `clut4`) or 16-bit textures (`5551`, `5650`) over heavy 32-bit `RGBA8888` for game assets to reduce bus bandwidth consumption and prevent VRAM allocation overflows.
 
 ### Installation to Memory Stick
 1. Connect your PSP via USB or insert your Memory Stick Duo into your computer.
