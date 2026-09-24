@@ -18,7 +18,19 @@ typedef struct __attribute__((packed)) {
     uint8_t  reserved[12];
 } PsndHeader;
 
+struct ForgeMusic {
+    SceUID   fd;
+    uint8_t  channels;
+    uint32_t sample_rate;
+    uint32_t data_size;
+    uint32_t data_start_offset;
+    uint32_t bytes_read;
+    bool     loop;
+    bool     is_playing;
+};
+
 static int16_t s_audio_buffer[AUDIO_BUFFER_SAMPLES * 2] __attribute__((aligned(64)));
+static int16_t s_music_buffer[AUDIO_BUFFER_SAMPLES * 2] __attribute__((aligned(64)));
 
 static volatile int         s_audio_thread_running = 1;
 static volatile int         s_audio_processing     = 0;
@@ -26,8 +38,26 @@ static volatile bool        s_is_playing           = false;
 static volatile uint8_t     s_loop                 = 0;
 static volatile uint32_t    s_playhead             = 0;
 static const ForgeSound*    s_current_sound        = NULL;
+static ForgeMusic*          s_current_music        = NULL;
+static volatile int         s_audio_volume         = PSP_AUDIO_VOLUME_MAX;
 static SceUID               s_audio_thid           = -1;
 static int                  s_audio_channel        = -1;
+
+void forge_audio_set_volume(int volume) {
+    if (volume < 0) volume = 0;
+    if (volume > PSP_AUDIO_VOLUME_MAX) volume = PSP_AUDIO_VOLUME_MAX;
+    s_audio_volume = volume;
+}
+
+int forge_audio_get_volume(void) {
+    return s_audio_volume;
+}
+
+static inline int16_t clamp_s16(int32_t v) {
+    if (v > 32767) return 32767;
+    if (v < -32768) return -32768;
+    return (int16_t)v;
+}
 
 static int AudioThread(SceSize args, void *argp) {
     (void)args; (void)argp;
@@ -38,73 +68,109 @@ static int AudioThread(SceSize args, void *argp) {
     }
 
     while (s_audio_thread_running) {
-        /* Mark that we are processing/reading from current sound */
         s_audio_processing = 1;
         __sync_synchronize();
 
         const ForgeSound* snd = s_current_sound;
+        ForgeMusic* mus = s_current_music;
 
-        if (s_is_playing && snd && snd->pcm_data && snd->sample_count > 0) {
-            uint32_t total_samples = snd->sample_count;
-            const int16_t* pcm = snd->pcm_data;
-            uint8_t channels = snd->channels;
+        bool has_snd = (s_is_playing && snd && snd->pcm_data && snd->sample_count > 0);
+        bool has_mus = (mus && mus->is_playing && mus->fd >= 0);
 
-            uint32_t remaining = (s_playhead < total_samples) ? (total_samples - s_playhead) : 0;
-            uint32_t to_copy = (remaining < AUDIO_BUFFER_SAMPLES) ? remaining : AUDIO_BUFFER_SAMPLES;
+        if (!has_snd && !has_mus) {
+            memset(s_audio_buffer, 0, sizeof(s_audio_buffer));
+        } else {
+            /* 1. Handle Music Stream if active */
+            if (has_mus) {
+                uint32_t bytes_per_sample = mus->channels * sizeof(int16_t);
+                uint32_t requested_bytes = AUDIO_BUFFER_SAMPLES * bytes_per_sample;
+                uint32_t remaining = (mus->data_size > mus->bytes_read) ? (mus->data_size - mus->bytes_read) : 0;
+                uint32_t to_read = (remaining < requested_bytes) ? remaining : requested_bytes;
 
-            /* Interleaved stereo source */
-            if (channels == 2) {
-                memcpy(s_audio_buffer, &pcm[s_playhead * 2], to_copy * 2 * sizeof(int16_t));
-            } else {
-                /* Mono to stereo expansion */
-                for (uint32_t i = 0; i < to_copy; ++i) {
-                    int16_t s = pcm[s_playhead + i];
-                    s_audio_buffer[i * 2]     = s;
-                    s_audio_buffer[i * 2 + 1] = s;
+                int bytes_read_now = 0;
+                if (to_read > 0) {
+                    bytes_read_now = sceIoRead(mus->fd, s_music_buffer, to_read);
                 }
-            }
 
-            s_playhead += to_copy;
+                if (bytes_read_now < (int)requested_bytes) {
+                    if (mus->loop && mus->data_size > 0) {
+                        /* Seek back to PCM data start */
+                        sceIoLseek(mus->fd, mus->data_start_offset, PSP_SEEK_SET);
+                        mus->bytes_read = 0;
 
-            /* If end of track reached */
-            if (to_copy < AUDIO_BUFFER_SAMPLES) {
-                if (s_loop && total_samples > 0) {
-                    s_playhead = 0;
-                    uint32_t needed = AUDIO_BUFFER_SAMPLES - to_copy;
-                    uint32_t wrap_copy = (total_samples < needed) ? total_samples : needed;
-                    if (channels == 2) {
-                        memcpy(&s_audio_buffer[to_copy * 2], pcm, wrap_copy * 2 * sizeof(int16_t));
-                    } else {
-                        for (uint32_t i = 0; i < wrap_copy; ++i) {
-                            int16_t s = pcm[i];
-                            s_audio_buffer[(to_copy + i) * 2]     = s;
-                            s_audio_buffer[(to_copy + i) * 2 + 1] = s;
+                        uint32_t wrap_needed = requested_bytes - (bytes_read_now > 0 ? bytes_read_now : 0);
+                        uint32_t wrap_to_read = (mus->data_size < wrap_needed) ? mus->data_size : wrap_needed;
+                        int wrap_read = sceIoRead(mus->fd, ((char*)s_music_buffer) + (bytes_read_now > 0 ? bytes_read_now : 0), wrap_to_read);
+                        if (wrap_read > 0) {
+                            mus->bytes_read += wrap_read;
+                            bytes_read_now += wrap_read;
                         }
+                    } else {
+                        mus->is_playing = false;
                     }
-                    s_playhead += wrap_copy;
-                    if (to_copy + wrap_copy < AUDIO_BUFFER_SAMPLES) {
-                        memset(&s_audio_buffer[(to_copy + wrap_copy) * 2], 0, (AUDIO_BUFFER_SAMPLES - to_copy - wrap_copy) * 2 * sizeof(int16_t));
+                    if (bytes_read_now < (int)requested_bytes) {
+                        memset(((char*)s_music_buffer) + (bytes_read_now > 0 ? bytes_read_now : 0), 0, requested_bytes - (bytes_read_now > 0 ? bytes_read_now : 0));
                     }
                 } else {
-                    /* Zero pad remainder and stop */
-                    memset(&s_audio_buffer[to_copy * 2], 0, (AUDIO_BUFFER_SAMPLES - to_copy) * 2 * sizeof(int16_t));
-                    s_is_playing = false;
+                    mus->bytes_read += bytes_read_now;
+                }
+
+                /* Copy music to audio buffer (handling mono expansion if needed) */
+                if (mus->channels == 2) {
+                    memcpy(s_audio_buffer, s_music_buffer, AUDIO_BUFFER_SAMPLES * 2 * sizeof(int16_t));
+                } else {
+                    for (int i = 0; i < AUDIO_BUFFER_SAMPLES; ++i) {
+                        int16_t m = s_music_buffer[i];
+                        s_audio_buffer[i * 2]     = m;
+                        s_audio_buffer[i * 2 + 1] = m;
+                    }
+                }
+            } else {
+                memset(s_audio_buffer, 0, sizeof(s_audio_buffer));
+            }
+
+            /* 2. Mix Sound Effect if active */
+            if (has_snd) {
+                uint32_t total_samples = snd->sample_count;
+                const int16_t* pcm = snd->pcm_data;
+                uint8_t channels = snd->channels;
+
+                uint32_t remaining = (s_playhead < total_samples) ? (total_samples - s_playhead) : 0;
+                uint32_t to_copy = (remaining < AUDIO_BUFFER_SAMPLES) ? remaining : AUDIO_BUFFER_SAMPLES;
+
+                for (uint32_t i = 0; i < to_copy; ++i) {
+                    int16_t sl = (channels == 2) ? pcm[(s_playhead + i) * 2]     : pcm[s_playhead + i];
+                    int16_t sr = (channels == 2) ? pcm[(s_playhead + i) * 2 + 1] : pcm[s_playhead + i];
+                    s_audio_buffer[i * 2]     = clamp_s16((int32_t)s_audio_buffer[i * 2]     + (int32_t)sl);
+                    s_audio_buffer[i * 2 + 1] = clamp_s16((int32_t)s_audio_buffer[i * 2 + 1] + (int32_t)sr);
+                }
+
+                s_playhead += to_copy;
+
+                if (to_copy < AUDIO_BUFFER_SAMPLES) {
+                    if (s_loop && total_samples > 0) {
+                        s_playhead = 0;
+                        uint32_t needed = AUDIO_BUFFER_SAMPLES - to_copy;
+                        uint32_t wrap_copy = (total_samples < needed) ? total_samples : needed;
+                        for (uint32_t i = 0; i < wrap_copy; ++i) {
+                            int16_t sl = (channels == 2) ? pcm[i * 2]     : pcm[i];
+                            int16_t sr = (channels == 2) ? pcm[i * 2 + 1] : pcm[i];
+                            s_audio_buffer[(to_copy + i) * 2]     = clamp_s16((int32_t)s_audio_buffer[(to_copy + i) * 2]     + (int32_t)sl);
+                            s_audio_buffer[(to_copy + i) * 2 + 1] = clamp_s16((int32_t)s_audio_buffer[(to_copy + i) * 2 + 1] + (int32_t)sr);
+                        }
+                        s_playhead += wrap_copy;
+                    } else {
+                        s_is_playing = false;
+                    }
                 }
             }
-        } else {
-            /* Output silence */
-            memset(s_audio_buffer, 0, sizeof(s_audio_buffer));
         }
 
-        /* Done reading from sound structure */
         s_audio_processing = 0;
         __sync_synchronize();
 
-        /* Flush D-Cache before DMA transfer */
         sceKernelDcacheWritebackRange(s_audio_buffer, sizeof(s_audio_buffer));
-
-        /* Blocking DMA write */
-        sceAudioOutputBlocking(s_audio_channel, PSP_AUDIO_VOLUME_MAX, s_audio_buffer);
+        sceAudioOutputBlocking(s_audio_channel, s_audio_volume, s_audio_buffer);
     }
 
     if (s_audio_channel >= 0) {
@@ -185,7 +251,6 @@ void forge_sound_free(ForgeSound* snd) {
     if (s_current_sound == snd) {
         forge_sound_stop();
     }
-    /* Wait if audio thread is actively reading pcm_data */
     while (s_audio_processing) {
         sceKernelDelayThread(200);
         __sync_synchronize();
@@ -212,7 +277,6 @@ void forge_sound_stop(void) {
     s_current_sound = NULL;
     s_playhead      = 0;
     __sync_synchronize();
-    /* Wait if audio thread is actively reading pcm_data */
     while (s_audio_processing) {
         sceKernelDelayThread(200);
         __sync_synchronize();
@@ -223,9 +287,83 @@ bool forge_sound_is_playing(void) {
     return s_is_playing;
 }
 
+/* ========================================================================= */
+/* Streaming Music Implementation                                            */
+/* ========================================================================= */
+
+ForgeMusic* forge_music_open(const char* path) {
+    if (!path) return NULL;
+    SceUID fd = forge_io_open(path);
+    if (fd < 0) return NULL;
+
+    PsndHeader hdr;
+    if (sceIoRead(fd, &hdr, sizeof(PsndHeader)) != (int)sizeof(PsndHeader)) {
+        sceIoClose(fd);
+        return NULL;
+    }
+
+    if (memcmp(hdr.magic, "PSND", 4) != 0 || hdr.version != 1) {
+        sceIoClose(fd);
+        return NULL;
+    }
+
+    ForgeMusic* mus = (ForgeMusic*)calloc(1, sizeof(ForgeMusic));
+    if (!mus) {
+        sceIoClose(fd);
+        return NULL;
+    }
+
+    mus->fd                 = fd;
+    mus->channels           = hdr.channels;
+    mus->sample_rate        = hdr.sample_rate;
+    mus->data_size          = hdr.data_size;
+    mus->data_start_offset  = sizeof(PsndHeader);
+    mus->bytes_read         = 0;
+    mus->is_playing         = false;
+    mus->loop               = false;
+
+    return mus;
+}
+
+void forge_music_play(ForgeMusic* music, bool loop) {
+    if (!music || music->fd < 0) return;
+    ensure_audio_thread_started();
+    music->loop               = loop;
+    music->bytes_read         = 0;
+    music->is_playing         = true;
+    sceIoLseek(music->fd, music->data_start_offset, PSP_SEEK_SET);
+    s_current_music = music;
+    __sync_synchronize();
+}
+
+void forge_music_stop(void) {
+    if (s_current_music) {
+        s_current_music->is_playing = false;
+        s_current_music = NULL;
+        __sync_synchronize();
+    }
+    while (s_audio_processing) {
+        sceKernelDelayThread(200);
+        __sync_synchronize();
+    }
+}
+
+void forge_music_close(ForgeMusic* music) {
+    if (!music) return;
+    if (s_current_music == music) {
+        forge_music_stop();
+    }
+    if (music->fd >= 0) {
+        sceIoClose(music->fd);
+        music->fd = -1;
+    }
+    free(music);
+}
+
 void forge_audio_shutdown(void) {
     if (s_audio_thid >= 0) {
         forge_sound_stop();
+        forge_music_stop();
         s_audio_thread_running = 0;
         __sync_synchronize();
         sceKernelWaitThreadEnd(s_audio_thid, NULL);

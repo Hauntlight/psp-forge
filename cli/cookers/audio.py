@@ -60,22 +60,40 @@ def cook_audio(
 
     if ext in [".mp3", ".ogg", ".flac", ".m4a"]:
         ffmpeg_bin = shutil.which("ffmpeg")
-        if not ffmpeg_bin:
-            raise RuntimeError(
-                f"Cannot convert '{input_path}': FFmpeg is not installed. "
-                "Please provide a .wav file directly or install ffmpeg."
-            )
+        gst_bin = shutil.which("gst-launch-1.0")
         temp_wav_path = output_path + ".tmp.wav"
-        cmd = [
-            ffmpeg_bin, "-y", "-i", input_path,
-            "-ar", str(target_rate),
-            "-ac", "2" if force_stereo else "1",
-            "-acodec", "pcm_s16le",
-            temp_wav_path
-        ]
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if res.returncode != 0:
-            raise RuntimeError(f"FFmpeg conversion failed: {res.stderr.decode('utf-8', errors='ignore')}")
+
+        if ffmpeg_bin:
+            cmd = [
+                ffmpeg_bin, "-y", "-i", input_path,
+                "-ar", str(target_rate),
+                "-ac", "2" if force_stereo else "1",
+                "-acodec", "pcm_s16le",
+                temp_wav_path
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if res.returncode != 0:
+                raise RuntimeError(f"FFmpeg conversion failed: {res.stderr.decode('utf-8', errors='ignore')}")
+        elif gst_bin:
+            caps = f"audio/x-raw,format=S16LE,rate={target_rate},channels={'2' if force_stereo else '1'}"
+            cmd = [
+                gst_bin, "-q",
+                "filesrc", f"location={input_path}",
+                "!", "decodebin",
+                "!", "audioconvert",
+                "!", "audioresample",
+                "!", caps,
+                "!", "wavenc",
+                "!", "filesink", f"location={temp_wav_path}"
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if res.returncode != 0 or not os.path.exists(temp_wav_path):
+                raise RuntimeError(f"GStreamer conversion failed: {res.stderr.decode('utf-8', errors='ignore')}")
+        else:
+            raise RuntimeError(
+                f"Cannot convert '{input_path}': neither FFmpeg nor GStreamer (gst-launch-1.0) is installed. "
+                "Please provide a .wav file directly or install ffmpeg/gstreamer."
+            )
         wav_file_to_read = temp_wav_path
     elif ext == ".wav":
         wav_file_to_read = input_path

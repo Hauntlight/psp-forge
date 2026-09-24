@@ -389,6 +389,91 @@ ForgeScene* forge_scene_get_current(void);
 void        forge_scene_update_and_draw(float dt);
 void        forge_scene_reset(void);
 
+/* ========================================================================= */
+/* Font & 2D Text Rendering                                                  */
+/* ========================================================================= */
+
+typedef struct __attribute__((packed)) {
+    char     magic[4];       /* "FFNT" */
+    uint16_t version;        /* 1 */
+    uint16_t font_size;      /* Point size */
+    uint16_t line_height;    /* Line advance */
+    uint16_t base_line;      /* Base offset */
+    uint16_t tex_w;          /* Texture atlas width */
+    uint16_t tex_h;          /* Texture atlas height */
+    uint16_t glyph_count;    /* Number of glyph entries */
+    uint8_t  reserved[14];   /* 32 bytes header total */
+} ForgeFontHeader;
+
+typedef struct __attribute__((packed)) {
+    uint8_t  char_code;      /* ASCII character code (32..126) */
+    uint8_t  reserved;
+    uint16_t x;              /* Top-left X in texture atlas */
+    uint16_t y;              /* Top-left Y in texture atlas */
+    uint16_t w;              /* Glyph width in pixels */
+    uint16_t h;              /* Glyph height in pixels */
+    int16_t  xoffset;        /* Left bearing */
+    int16_t  yoffset;        /* Top bearing */
+    int16_t  xadvance;       /* Horizontal cursor advance */
+    float    u0, v0, u1, v1; /* Precomputed normalized UVs */
+} ForgeGlyphDef;
+
+typedef struct {
+    ForgeFontHeader header;
+    ForgeGlyphDef   glyphs[128]; /* Fast ASCII lookup table [0..127] */
+    ForgeTexture*   texture;
+} ForgeFont;
+
+ForgeFont* forge_font_load(const char* fnt_path, const char* tex_path);
+void       forge_font_free(ForgeFont* font);
+void       forge_font_draw_text(const ForgeFont* font, const char* text, float x, float y, uint32_t color);
+void       forge_font_draw_text_scaled(const ForgeFont* font, const char* text, float x, float y, float scale, uint32_t color);
+float      forge_font_get_text_width(const ForgeFont* font, const char* text, float scale);
+
+/* ========================================================================= */
+/* Streaming Music & Volume Control                                          */
+/* ========================================================================= */
+
+typedef struct ForgeMusic ForgeMusic;
+
+ForgeMusic* forge_music_open(const char* path);
+void        forge_music_play(ForgeMusic* music, bool loop);
+void        forge_music_stop(void);
+void        forge_music_close(ForgeMusic* music);
+void        forge_audio_set_volume(int volume);
+int         forge_audio_get_volume(void);
+
+/* ========================================================================= */
+/* 3D Camera & Cinematic Transitions                                         */
+/* ========================================================================= */
+
+typedef struct {
+    ScePspFVector3 eye;
+    ScePspFVector3 target;
+    ScePspFVector3 up;
+    float          fov;
+
+    /* Smooth LERP Target */
+    ScePspFVector3 target_eye;
+    ScePspFVector3 target_target;
+    float          lerp_speed;
+    bool           is_lerping;
+} ForgeCamera3D;
+
+void forge_camera3d_init(ForgeCamera3D* cam, float fov_deg);
+void forge_camera3d_set(ForgeCamera3D* cam, float eye_x, float eye_y, float eye_z, float target_x, float target_y, float target_z);
+void forge_camera3d_lerp_to(ForgeCamera3D* cam, float target_eye_x, float target_eye_y, float target_eye_z, float target_look_x, float target_look_y, float target_look_z, float speed);
+void forge_camera3d_update(ForgeCamera3D* cam, float dt);
+void forge_camera3d_apply(const ForgeCamera3D* cam);
+
+/* ========================================================================= */
+/* Generic Parallax Scrolling & Pause Overlay                                */
+/* ========================================================================= */
+
+void forge_parallax_draw_bg(const ForgeTexture* tex, float cam_x, float factor);
+void forge_parallax_draw_fg(const ForgeTexture* tex, float cam_x, float factor);
+void forge_draw_pause_overlay(const ForgeFont* font, const char* message, uint32_t overlay_color);
+
 #ifdef __cplusplus
 }
 #endif

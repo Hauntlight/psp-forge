@@ -448,11 +448,13 @@ def cook_gltf_textures(model: GLTFModel, output_dir: str, prefix: str) -> Tuple[
             alpha_data = getattr(alpha_chan, "get_flattened_data", alpha_chan.getdata)()
             min_a = min(alpha_data)
             if min_a > 180:
+                img_name = (img.get("name") or "").lower()
+                is_decal = any(k in img_name for k in ["eyebrow", "eyelash", "lash", "brow"])
                 corners = [im.getpixel((0, 0)), im.getpixel((im.width - 1, 0)),
                            im.getpixel((0, im.height - 1)), im.getpixel((im.width - 1, im.height - 1))]
                 c0 = corners[0][:3]
-                if all(max(abs(c[i] - c0[i]) for i in range(3)) <= 3 for c in corners):
-                    if c0 == (95, 95, 95) or (abs(c0[0] - c0[1]) <= 2 and abs(c0[1] - c0[2]) <= 2 and 40 <= c0[0] <= 210):
+                if is_decal and all(max(abs(c[i] - c0[i]) for i in range(3)) <= 3 for c in corners):
+                    if c0 == (95, 95, 95) or (abs(c0[0] - c0[1]) <= 2 and abs(c0[1] - c0[2]) <= 2 and 80 <= c0[0] <= 110):
                         pix = im.load()
                         for py in range(im.height):
                             for px in range(im.width):
@@ -482,14 +484,8 @@ def cook_gltf_textures(model: GLTFModel, output_dir: str, prefix: str) -> Tuple[
         uv_transforms[single_idx] = (0.0, 0.0, 1.0, 1.0)
     else:
         num_imgs = len(valid_images)
-        if num_imgs <= 2:
-            cols, rows = 2, 1
-        elif num_imgs <= 4:
-            cols, rows = 2, 2
-        elif num_imgs <= 6:
-            cols, rows = 3, 2
-        else:
-            cols, rows = 4, 2
+        cols = math.ceil(math.sqrt(num_imgs))
+        rows = math.ceil(num_imgs / cols)
 
         tile_w = atlas_w // cols
         tile_h = atlas_h // rows

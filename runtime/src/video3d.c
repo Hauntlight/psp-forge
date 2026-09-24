@@ -297,3 +297,79 @@ void forge_draw_mesh_node(
     sceGumPopMatrix();
 }
 
+/* ========================================================================= */
+/* 3D Camera & Cinematic Transitions                                         */
+/* ========================================================================= */
+
+void forge_camera3d_init(ForgeCamera3D* cam, float fov_deg) {
+    if (!cam) return;
+    memset(cam, 0, sizeof(ForgeCamera3D));
+    cam->eye.x    = 0.0f;
+    cam->eye.y    = 1.0f;
+    cam->eye.z    = 3.5f;
+    cam->target.x = 0.0f;
+    cam->target.y = 0.8f;
+    cam->target.z = 0.0f;
+    cam->up.x     = 0.0f;
+    cam->up.y     = 1.0f;
+    cam->up.z     = 0.0f;
+    cam->fov      = fov_deg > 0.0f ? fov_deg : 45.0f;
+    cam->is_lerping = false;
+    cam->lerp_speed = 5.0f;
+}
+
+void forge_camera3d_set(ForgeCamera3D* cam, float eye_x, float eye_y, float eye_z, float target_x, float target_y, float target_z) {
+    if (!cam) return;
+    cam->eye.x    = eye_x;
+    cam->eye.y    = eye_y;
+    cam->eye.z    = eye_z;
+    cam->target.x = target_x;
+    cam->target.y = target_y;
+    cam->target.z = target_z;
+    cam->is_lerping = false;
+}
+
+void forge_camera3d_lerp_to(ForgeCamera3D* cam, float target_eye_x, float target_eye_y, float target_eye_z, float target_look_x, float target_look_y, float target_look_z, float speed) {
+    if (!cam) return;
+    cam->target_eye.x    = target_eye_x;
+    cam->target_eye.y    = target_eye_y;
+    cam->target_eye.z    = target_eye_z;
+    cam->target_target.x = target_look_x;
+    cam->target_target.y = target_look_y;
+    cam->target_target.z = target_look_z;
+    cam->lerp_speed      = speed > 0.0f ? speed : 5.0f;
+    cam->is_lerping      = true;
+}
+
+void forge_camera3d_update(ForgeCamera3D* cam, float dt) {
+    if (!cam || !cam->is_lerping) return;
+    float t = dt * cam->lerp_speed;
+    if (t > 1.0f) t = 1.0f;
+
+    cam->eye.x    += (cam->target_eye.x    - cam->eye.x)    * t;
+    cam->eye.y    += (cam->target_eye.y    - cam->eye.y)    * t;
+    cam->eye.z    += (cam->target_eye.z    - cam->eye.z)    * t;
+    cam->target.x += (cam->target_target.x - cam->target.x) * t;
+    cam->target.y += (cam->target_target.y - cam->target.y) * t;
+    cam->target.z += (cam->target_target.z - cam->target.z) * t;
+
+    float dx = cam->target_eye.x - cam->eye.x;
+    float dy = cam->target_eye.y - cam->eye.y;
+    float dz = cam->target_eye.z - cam->eye.z;
+    if (dx * dx + dy * dy + dz * dz < 0.0001f) {
+        cam->eye = cam->target_eye;
+        cam->target = cam->target_target;
+        cam->is_lerping = false;
+    }
+}
+
+void forge_camera3d_apply(const ForgeCamera3D* cam) {
+    if (!cam) return;
+    forge_set_camera(
+        cam->eye.x, cam->eye.y, cam->eye.z,
+        cam->target.x, cam->target.y, cam->target.z,
+        cam->fov
+    );
+}
+
+

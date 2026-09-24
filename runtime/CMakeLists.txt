@@ -26,6 +26,7 @@ set(PSPFORGE_SOURCES
     src/anim.c
     src/anim3d.c
     src/scene.c
+    src/font.c
 )
 
 add_library(pspforge STATIC ${PSPFORGE_SOURCES})

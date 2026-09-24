@@ -227,7 +227,7 @@ void forge_anim3d_set_speed(ForgeAnimator* animator, float speed) {
 void forge_anim3d_update(ForgeAnimator* animator, const ForgeModel3D* model, float dt) {
     if (!animator) return;
 
-    if (!animator->clip || !animator->is_playing) {
+    if (!animator->clip) {
         /* If no active clip, keep or compute rest pose */
         if (model && model->bones) {
             for (uint16_t i = 0; i < model->bone_count && i < FORGE_MAX_BONES; ++i) {
@@ -253,6 +253,11 @@ void forge_anim3d_update(ForgeAnimator* animator, const ForgeModel3D* model, flo
                 gumMultMatrix(&animator->skin_matrices[i], &animator->world_matrices[i], &inv_bind);
             }
         }
+        return;
+    }
+
+    if (!animator->is_playing) {
+        /* Animation is stopped or finished: preserve the evaluated final pose */
         return;
     }
 

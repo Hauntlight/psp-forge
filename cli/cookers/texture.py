@@ -128,10 +128,10 @@ def cook_texture(
 
     # Hard hardware limit: PSP GE cannot sample textures larger than 512x512
     if orig_w > 512 or orig_h > 512:
-        raise ValueError(
-            f"Texture '{os.path.basename(input_path)}' ({orig_w}x{orig_h}) exceeds Sony PSP hardware maximum of 512x512. "
-            "Please downscale this image before cooking."
-        )
+        print(f"  [!] Auto-downscaling '{os.path.basename(input_path)}' ({orig_w}x{orig_h}) to fit PSP 512x512 hardware limit...")
+        resample = getattr(Image, "Resampling", Image).LANCZOS
+        img.thumbnail((512, 512), resample)
+        orig_w, orig_h = img.size
 
     pwr2_w = next_power_of_two(orig_w)
     pwr2_h = next_power_of_two(orig_h)

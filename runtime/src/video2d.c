@@ -23,6 +23,11 @@ typedef struct {
     float x, y, z;
 } ForgeVertex2D;
 
+typedef struct {
+    uint32_t color;
+    float x, y, z;
+} ForgeColorVertex2D;
+
 static ForgeTexture* load_texture_internal(const char* path, bool to_vram) {
     SceUID fd = forge_io_open(path);
     if (fd < 0) return NULL;
@@ -216,4 +221,83 @@ void forge_draw_sprite(
      * are not broken by the 2D state we set above. */
     sceGuEnable(GU_DEPTH_TEST);
     sceGuDisable(GU_TEXTURE_2D);
+}
+
+void forge_parallax_draw_bg(const ForgeTexture* tex, float cam_x, float factor) {
+    if (!tex || !tex->data) return;
+
+    float offset_x = (480.0f - (float)tex->width) * 0.5f - (cam_x * factor);
+    float offset_y = 0.0f;
+    if (tex->height >= 272) {
+        offset_y = 272.0f - (float)tex->height;
+    } else {
+        offset_y = (272.0f - (float)tex->height) * 0.5f;
+    }
+
+    sceGuDepthMask(GU_TRUE);
+    forge_draw_sprite(
+        tex,
+        offset_x, offset_y, (float)tex->width, (float)tex->height,
+        0.0f, 0.0f, (float)tex->width, (float)tex->height
+    );
+    sceGuDepthMask(GU_FALSE);
+}
+
+void forge_parallax_draw_fg(const ForgeTexture* tex, float cam_x, float factor) {
+    if (!tex || !tex->data) return;
+
+    float offset_x = (480.0f - (float)tex->width) * 0.5f - (cam_x * factor);
+    float offset_y = 0.0f;
+    if (tex->height >= 272) {
+        offset_y = 272.0f - (float)tex->height;
+    } else {
+        offset_y = (272.0f - (float)tex->height) * 0.5f;
+    }
+
+    sceGuDepthMask(GU_TRUE);
+    forge_draw_sprite(
+        tex,
+        offset_x, offset_y, (float)tex->width, (float)tex->height,
+        0.0f, 0.0f, (float)tex->width, (float)tex->height
+    );
+    sceGuDepthMask(GU_FALSE);
+}
+
+void forge_draw_pause_overlay(const ForgeFont* font, const char* message, uint32_t overlay_color) {
+    sceGuDisable(GU_TEXTURE_2D);
+    sceGuEnable(GU_BLEND);
+    sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
+    sceGuDisable(GU_DEPTH_TEST);
+    sceGuDepthMask(GU_TRUE);
+
+    ForgeColorVertex2D* vtx = (ForgeColorVertex2D*)sceGuGetMemory(2 * sizeof(ForgeColorVertex2D));
+    if (vtx) {
+        vtx[0].color = overlay_color;
+        vtx[0].x = 0.0f;
+        vtx[0].y = 0.0f;
+        vtx[0].z = 0.0f;
+
+        vtx[1].color = overlay_color;
+        vtx[1].x = 480.0f;
+        vtx[1].y = 272.0f;
+        vtx[1].z = 0.0f;
+
+        sceGuDrawArray(
+            GU_SPRITES,
+            GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
+            2,
+            NULL,
+            vtx
+        );
+    }
+
+    if (font && message) {
+        float tw = forge_font_get_text_width(font, message, 1.0f);
+        float tx = (480.0f - tw) * 0.5f;
+        float ty = (272.0f - (float)font->header.line_height) * 0.5f;
+        forge_font_draw_text(font, message, tx, ty, 0xFFFFFFFF);
+    }
+
+    sceGuDepthMask(GU_FALSE);
+    sceGuEnable(GU_DEPTH_TEST);
 }

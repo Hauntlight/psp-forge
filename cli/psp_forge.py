@@ -21,6 +21,7 @@ from .cookers.texture import cook_texture
 from .cookers.mesh import cook_mesh
 from .cookers.audio import cook_audio
 from .cookers.gltf import cook_gltf
+from .cookers.font import cook_font
 
 # Directory where psp-forge is located
 FORGE_ROOT = Path(__file__).resolve().parent.parent
@@ -180,6 +181,16 @@ def cmd_cook(args):
                 print(f"[+] Cooking 3D glTF/GLB model & animations ({mode_str}): {src_file}")
                 res = cook_gltf(str(src_file), str(target_sub), no_engine=no_engine)
                 cooked_count += len(res.get("model", [])) + len(res.get("animations", []))
+
+            elif ext in [".ttf", ".otf"]:
+                dst_fnt = target_sub / f"{src_file.stem}.fnt"
+                dst_tex = target_sub / f"{src_file.stem}.tex"
+                if not force and dst_fnt.exists() and dst_tex.exists() and dst_fnt.stat().st_mtime >= src_file.stat().st_mtime:
+                    skipped_count += 1
+                    continue
+                print(f"[+] Cooking font: {src_file} -> {dst_fnt}, {dst_tex}")
+                cook_font(str(src_file), str(target_sub), font_size=28, format_type="8888")
+                cooked_count += 2
 
     print(f"[+] Asset cooking complete: {cooked_count} cooked, {skipped_count} up-to-date.")
 
